@@ -1,0 +1,54 @@
+import { cn } from '@/utils/helpers'
+
+interface StatusBadgeProps {
+  label: string
+  variant?: 'success' | 'warning' | 'danger' | 'info' | 'neutral'
+  pulse?: boolean
+  className?: string
+}
+
+export default function StatusBadge({
+  label,
+  variant = 'neutral',
+  pulse = false,
+  className,
+}: StatusBadgeProps) {
+  const variants = {
+    success: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400',
+    warning: 'bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400',
+    danger: 'bg-red-500/10 text-red-600 border-red-500/20 dark:text-red-400',
+    info: 'bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-400',
+    neutral: 'bg-slate-500/10 text-slate-600 border-slate-500/20 dark:text-slate-400',
+  }
+
+  const dotColors = {
+    success: 'bg-emerald-500',
+    warning: 'bg-amber-500',
+    danger: 'bg-red-500',
+    info: 'bg-blue-500',
+    neutral: 'bg-slate-400',
+  }
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize tracking-wide',
+        variants[variant],
+        className
+      )}
+    >
+      <span className="relative flex h-1.5 w-1.5">
+        {pulse && (
+          <span
+            className={cn(
+              'absolute inline-flex h-full w-full animate-ping rounded-full opacity-75',
+              dotColors[variant]
+            )}
+          />
+        )}
+        <span className={cn('relative inline-flex h-1.5 w-1.5 rounded-full', dotColors[variant])} />
+      </span>
+      {label}
+    </span>
+  )
+}
