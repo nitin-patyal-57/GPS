@@ -7,6 +7,11 @@ const AWS_IOT_ENDPOINT = process.env.MQTT_BROKER_URL || 'mqtts://avj249ldc7joq-a
 // Production topics
 const TOPIC_SOUNDBOX_METRICS = 'soundbox_dev/+/metrics'
 const TOPIC_SOUNDBOX_ACK = 'soundbox_dev/+/ack'
+const TOPIC_SOUNDBOX_OTA_ACK = 'soundbox_dev/+/ota/ack'
+const TOPIC_WEGW_ACK = 'wegw/+/ack'
+const TOPIC_WEGW_OTA_ACK = 'wegw/+/ota/ack'
+const TOPIC_ROOT_ACK = '/ack'
+const TOPIC_PLUS_ACK = '+/ack'
 const TOPIC_SOUNDBOX_CMD_PREFIX = 'soundbox_dev/'
 const TOPIC_LEGACY_GPS_UPLINK = 'wegw/+/gps/nmea'
 
@@ -186,6 +191,45 @@ function handleMqttMessage(topic: string, messageBuffer: Buffer) {
     const rawPayload = messageBuffer.toString('utf-8').trim()
     const now = new Date().toISOString()
     const db = getDb()
+
+    // Handle ACK messages (e.g. soundbox_dev/<imei>/ack, wegw/<imei>/ack, /ack, etc.)
+    const isAckTopic = topic.endsWith('/ack') || topic === '/ack' || topic.includes('/ack')
+    if (isAckTopic) {
+      console.log(`[MQTT ACK] Received ACK on topic ${topic}: ${rawPayload}`)
+      let ackJson: any = null
+      try {
+        ackJson = JSON.parse(rawPayload)
+      } catch {
+        ackJson = { raw: rawPayload }
+      }
+
+      let imeiFromTopic: string | undefined
+      const match = topic.match(/^(?:soundbox_dev|wegw)\/([^/]+)\/(?:ota\/)?ack$/)
+      if (match) imeiFromTopic = match[1]
+
+      const deviceId = ackJson.imei || ackJson.deviceId || imeiFromTopic
+      const jobId = ackJson.jobId || ackJson.job_id || ackJson.id
+
+      try {
+        if (typeof db.updateOtaJobAck === 'function') {
+          db.updateOtaJobAck(jobId, deviceId, ackJson)
+        }
+      } catch (err: any) {
+        console.error('[MQTT ACK] DB update error:', err.message)
+      }
+
+      if (broadcastFn) {
+        broadcastFn('ota_ack', {
+          topic,
+          deviceId,
+          jobId,
+          payload: ackJson,
+          raw: rawPayload,
+          timestamp: now,
+        })
+      }
+      return
+    }
 
     const metricsMatch = topic.match(/^soundbox_dev\/([^/]+)\/metrics$/)
     if (metricsMatch) {
@@ -468,9 +512,19 @@ export function initMqttService(broadcast: (event: string, data: unknown) => voi
 
     mqttClient.on('connect', () => {
       console.log(`[MQTT] Connected successfully to AWS IoT Core broker!`)
-      mqttClient?.subscribe([TOPIC_SOUNDBOX_METRICS, TOPIC_SOUNDBOX_ACK, TOPIC_LEGACY_GPS_UPLINK], { qos: 1 }, (err) => {
+      const topicsToSubscribe = [
+        TOPIC_SOUNDBOX_METRICS,
+        TOPIC_SOUNDBOX_ACK,
+        TOPIC_SOUNDBOX_OTA_ACK,
+        TOPIC_WEGW_ACK,
+        TOPIC_WEGW_OTA_ACK,
+        TOPIC_LEGACY_GPS_UPLINK,
+        TOPIC_ROOT_ACK,
+        TOPIC_PLUS_ACK,
+      ]
+      mqttClient?.subscribe(topicsToSubscribe, { qos: 1 }, (err) => {
         if (err) console.error('[MQTT] Subscription error:', err)
-        else console.log(`[MQTT] Subscribed to topics: ${TOPIC_SOUNDBOX_METRICS}, ${TOPIC_LEGACY_GPS_UPLINK}`)
+        else console.log(`[MQTT] Subscribed to telemetry and ACK topics: ${topicsToSubscribe.join(', ')}`)
       })
     })
 
@@ -486,6 +540,39 @@ export function initMqttService(broadcast: (event: string, data: unknown) => voi
   }
 
   return mqttClient
+}
+
+export async function publishOtaPayload(imei: string, otaPayload: any): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (!mqttClient || !mqttClient.connected) {
+      console.warn(`[MQTT] Cannot dispatch OTA: broker not connected`)
+      resolve(false)
+      return
+    }
+
+    const jsonStr = typeof otaPayload === 'string' ? otaPayload : JSON.stringify(otaPayload)
+
+    // Publish to downlink topics
+    const topics = [
+      `${TOPIC_SOUNDBOX_CMD_PREFIX}${imei}/command`,
+      `${TOPIC_SOUNDBOX_CMD_PREFIX}${imei}/ota`,
+      `wegw/${imei}/ota`,
+    ]
+
+    let completed = 0
+    let anySuccess = false
+
+    for (const t of topics) {
+      mqttClient.publish(t, jsonStr, { qos: 1, retain: false }, (err) => {
+        completed++
+        if (!err) anySuccess = true
+        if (completed === topics.length) {
+          console.log(`[MQTT OTA] Sent payload to ${topics.join(', ')}: ${jsonStr}`)
+          resolve(anySuccess)
+        }
+      })
+    }
+  })
 }
 
 export async function publishLedCommand(

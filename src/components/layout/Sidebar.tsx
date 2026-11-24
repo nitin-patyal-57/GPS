@@ -10,6 +10,7 @@ import {
   Settings,
   X,
   Compass,
+  UploadCloud,
 } from 'lucide-react'
 import { cn } from '@/utils/helpers'
 
@@ -25,6 +26,7 @@ const navItems = [
   { to: '/history', icon: Clock, label: 'Route History' },
   { to: '/analytics', icon: Activity, label: 'Driving Dynamics' },
   { to: '/battery', icon: Battery, label: 'Battery & Power' },
+  { to: '/ota', icon: UploadCloud, label: 'OTA Updates' },
   { to: '/alerts', icon: Bell, label: 'Alerts' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]

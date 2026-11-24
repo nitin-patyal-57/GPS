@@ -19,6 +19,7 @@ class GpsStore {
     devices = new Map();
     history = [];
     alerts = [];
+    otaJobs = [];
     filePath = null;
     constructor(filePath) {
         if (filePath) {
@@ -45,7 +46,10 @@ class GpsStore {
             if (Array.isArray(parsed.alerts)) {
                 this.alerts = parsed.alerts.filter((a) => !isIgnoredId(a.deviceId));
             }
-            console.log(`[Database] Loaded ${this.devices.size} devices and ${this.history.length} telemetry points from ${this.filePath}`);
+            if (Array.isArray(parsed.otaJobs)) {
+                this.otaJobs = parsed.otaJobs;
+            }
+            console.log(`[Database] Loaded ${this.devices.size} devices, ${this.history.length} telemetry points, and ${this.otaJobs.length} OTA jobs from ${this.filePath}`);
         }
         catch (err) {
             console.warn('[Database] Could not parse existing store file:', err.message);
@@ -63,12 +67,49 @@ class GpsStore {
                 devices: Array.from(this.devices.values()).filter((d) => !isIgnoredId(d.deviceId)),
                 history: this.history.filter((h) => !isIgnoredId(h.deviceId)).slice(-2000),
                 alerts: this.alerts.filter((a) => !isIgnoredId(a.deviceId)).slice(-200),
+                otaJobs: this.otaJobs.slice(-500),
             };
             fs_1.default.writeFileSync(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
         }
         catch (err) {
             // In serverless read-only filesystems, fail silently
         }
+    }
+    saveOtaJob(job) {
+        const idx = this.otaJobs.findIndex((j) => j.id === job.id);
+        if (idx >= 0) {
+            this.otaJobs[idx] = job;
+        }
+        else {
+            this.otaJobs.unshift(job);
+        }
+        if (this.otaJobs.length > 500)
+            this.otaJobs = this.otaJobs.slice(0, 500);
+        this.saveToFile();
+    }
+    updateOtaJobAck(jobId, deviceId, ackData) {
+        const now = new Date().toISOString();
+        const ackPayloadStr = typeof ackData === 'string' ? ackData : JSON.stringify(ackData || {});
+        let updated = false;
+        for (const job of this.otaJobs) {
+            const matchJob = !jobId || job.jobId === jobId;
+            const matchDevice = !deviceId || job.deviceId === deviceId;
+            if (matchJob && matchDevice) {
+                job.status = 'acknowledged';
+                job.ackedAt = now;
+                job.ackPayload = ackPayloadStr;
+                updated = true;
+            }
+        }
+        if (updated)
+            this.saveToFile();
+        return updated;
+    }
+    getOtaJobs(limit = 100) {
+        return this.otaJobs.slice(0, limit);
+    }
+    getOtaJobsByJobId(jobId) {
+        return this.otaJobs.filter((j) => j.jobId === jobId);
     }
     pragma(_stmt) { }
     exec(_sql) { }

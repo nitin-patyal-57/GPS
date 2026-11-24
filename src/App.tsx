@@ -13,6 +13,7 @@ const LiveMapPage = lazy(() => import('@/pages/LiveMapPage'))
 const RouteHistoryPage = lazy(() => import('@/pages/RouteHistoryPage'))
 const DrivingAnalyticsPage = lazy(() => import('@/pages/DrivingAnalyticsPage'))
 const BatteryPowerPage = lazy(() => import('@/pages/BatteryPowerPage'))
+const OtaUpdatesPage = lazy(() => import('@/pages/OtaUpdatesPage'))
 const AlertsPage = lazy(() => import('@/pages/AlertsPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 
@@ -32,6 +33,7 @@ export default function App() {
                   <Route path="/history" element={<RouteHistoryPage />} />
                   <Route path="/analytics" element={<DrivingAnalyticsPage />} />
                   <Route path="/battery" element={<BatteryPowerPage />} />
+                  <Route path="/ota" element={<OtaUpdatesPage />} />
                   <Route path="/alerts" element={<AlertsPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                 </Route>

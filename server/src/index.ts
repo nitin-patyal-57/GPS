@@ -7,6 +7,7 @@ import { WebSocketServer } from 'ws'
 import { initDatabase } from './services/database'
 import deviceRoutes from './routes/devices'
 import alertRoutes from './routes/alerts'
+import otaRoutes from './routes/ota'
 import { broadcast, addClient } from './services/websocket'
 import { initMqttService, getMqttStatus } from './services/mqttService'
 
@@ -20,6 +21,7 @@ app.use(express.json())
 // API Routes
 app.use('/api', deviceRoutes)
 app.use('/api', alertRoutes)
+app.use('/api', otaRoutes)
 
 // Health check
 app.get('/api/health', (req, res) => {

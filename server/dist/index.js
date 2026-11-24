@@ -13,6 +13,7 @@ const ws_1 = require("ws");
 const database_1 = require("./services/database");
 const devices_1 = __importDefault(require("./routes/devices"));
 const alerts_1 = __importDefault(require("./routes/alerts"));
+const ota_1 = __importDefault(require("./routes/ota"));
 const websocket_1 = require("./services/websocket");
 const mqttService_1 = require("./services/mqttService");
 const app = (0, express_1.default)();
@@ -25,6 +26,7 @@ app.use(express_1.default.json());
 // API Routes
 app.use('/api', devices_1.default);
 app.use('/api', alerts_1.default);
+app.use('/api', ota_1.default);
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({

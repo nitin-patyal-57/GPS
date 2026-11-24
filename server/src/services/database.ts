@@ -37,6 +37,21 @@ export interface AlertRecord {
   acknowledged: number
 }
 
+export interface OtaJobRecord {
+  id: string
+  jobId: string
+  deviceId: string
+  otaType: 'APP_OTA' | 'DF_OTA'
+  urlAddress: string
+  fileSha256: string
+  version: string
+  payload: string
+  status: 'pending' | 'sent' | 'acknowledged' | 'failed'
+  sentAt: string
+  ackedAt?: string
+  ackPayload?: string
+}
+
 const DEMO_DEVICE_IDS = new Set(['867509082945058', '861185084200101'])
 
 function isIgnoredId(id: string): boolean {
@@ -49,6 +64,7 @@ export class GpsStore {
   private devices = new Map<string, DeviceRecord>()
   private history: HistoryRecord[] = []
   private alerts: AlertRecord[] = []
+  private otaJobs: OtaJobRecord[] = []
   private filePath: string | null = null
 
   constructor(filePath?: string) {
@@ -76,7 +92,10 @@ export class GpsStore {
       if (Array.isArray(parsed.alerts)) {
         this.alerts = parsed.alerts.filter((a: any) => !isIgnoredId(a.deviceId))
       }
-      console.log(`[Database] Loaded ${this.devices.size} devices and ${this.history.length} telemetry points from ${this.filePath}`)
+      if (Array.isArray(parsed.otaJobs)) {
+        this.otaJobs = parsed.otaJobs
+      }
+      console.log(`[Database] Loaded ${this.devices.size} devices, ${this.history.length} telemetry points, and ${this.otaJobs.length} OTA jobs from ${this.filePath}`)
     } catch (err: any) {
       console.warn('[Database] Could not parse existing store file:', err.message)
     }
@@ -93,11 +112,49 @@ export class GpsStore {
         devices: Array.from(this.devices.values()).filter((d) => !isIgnoredId(d.deviceId)),
         history: this.history.filter((h) => !isIgnoredId(h.deviceId)).slice(-2000),
         alerts: this.alerts.filter((a) => !isIgnoredId(a.deviceId)).slice(-200),
+        otaJobs: this.otaJobs.slice(-500),
       }
       fs.writeFileSync(this.filePath, JSON.stringify(data, null, 2), 'utf-8')
     } catch (err: any) {
       // In serverless read-only filesystems, fail silently
     }
+  }
+
+  saveOtaJob(job: OtaJobRecord) {
+    const idx = this.otaJobs.findIndex((j) => j.id === job.id)
+    if (idx >= 0) {
+      this.otaJobs[idx] = job
+    } else {
+      this.otaJobs.unshift(job)
+    }
+    if (this.otaJobs.length > 500) this.otaJobs = this.otaJobs.slice(0, 500)
+    this.saveToFile()
+  }
+
+  updateOtaJobAck(jobId: string, deviceId?: string, ackData?: any): boolean {
+    const now = new Date().toISOString()
+    const ackPayloadStr = typeof ackData === 'string' ? ackData : JSON.stringify(ackData || {})
+    let updated = false
+    for (const job of this.otaJobs) {
+      const matchJob = !jobId || job.jobId === jobId
+      const matchDevice = !deviceId || job.deviceId === deviceId
+      if (matchJob && matchDevice) {
+        job.status = 'acknowledged'
+        job.ackedAt = now
+        job.ackPayload = ackPayloadStr
+        updated = true
+      }
+    }
+    if (updated) this.saveToFile()
+    return updated
+  }
+
+  getOtaJobs(limit = 100): OtaJobRecord[] {
+    return this.otaJobs.slice(0, limit)
+  }
+
+  getOtaJobsByJobId(jobId: string): OtaJobRecord[] {
+    return this.otaJobs.filter((j) => j.jobId === jobId)
   }
 
   pragma(_stmt: string) {}

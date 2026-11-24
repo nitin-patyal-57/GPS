@@ -1,0 +1,912 @@
+import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useGpsDevices } from '@/hooks/useGpsDevices'
+import { otaService } from '@/services/otaService'
+import { realtimeGpsService } from '@/services/websocket'
+import type { OtaType, OtaJobRecord } from '@/types/ota'
+import Card from '@/components/ui/Card'
+import StatusBadge from '@/components/ui/StatusBadge'
+import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import EmptyState from '@/components/ui/EmptyState'
+import {
+  UploadCloud,
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+  Search,
+  Wifi,
+  WifiOff,
+  Copy,
+  Check,
+  FileCode,
+  RefreshCw,
+  SlidersHorizontal,
+  Layers,
+  Cpu,
+  ArrowRight,
+  ExternalLink,
+  ShieldCheck,
+  Radio,
+  CheckSquare,
+  Square,
+} from 'lucide-react'
+import { formatRelativeTime, formatTimeSafe, parseDateSafe } from '@/utils/helpers'
+
+type DeviceFilter = 'all' | 'online' | 'offline'
+type ActiveTab = 'deploy' | 'history'
+
+// Determines if a device is online/connected with MQTT (within last 15 minutes)
+function isDeviceMqttOnline(lastSeen: string | number | undefined | null): boolean {
+  const d = parseDateSafe(lastSeen)
+  if (!d) return false
+  const diffMinutes = (Date.now() - d.getTime()) / (1000 * 60)
+  return diffMinutes <= 15
+}
+
+export default function OtaUpdatesPage() {
+  const { devices, loading, refetch } = useGpsDevices()
+  const [activeTab, setActiveTab] = useState<ActiveTab>('deploy')
+
+  // Search & Filter state
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState<DeviceFilter>('all')
+
+  // Multi-selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // OTA Form Configuration
+  const [otaType, setOtaType] = useState<OtaType>('APP_OTA')
+  const [jobId, setJobId] = useState(() => `J${Math.floor(100 + Math.random() * 900)}`)
+  const [urlAddress, setUrlAddress] = useState('https://firmware.gw1ns.io/builds/customer_app_v1.0.3.bin')
+  const [version, setVersion] = useState('WMZ_DEV_1.0.3')
+  const [fileSha256, setFileSha256] = useState('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')
+
+  // Deployment & ACK state
+  const [isDeploying, setIsDeploying] = useState(false)
+  const [deployResult, setDeployResult] = useState<{ message: string; success: boolean } | null>(null)
+  const [otaJobs, setOtaJobs] = useState<OtaJobRecord[]>([])
+  const [copiedPayload, setCopiedPayload] = useState(false)
+  const [selectedJobForModal, setSelectedJobForModal] = useState<OtaJobRecord | null>(null)
+
+  // Load existing OTA job history
+  const loadJobs = useCallback(async () => {
+    const list = await otaService.getOtaJobs()
+    setOtaJobs(list)
+  }, [])
+
+  useEffect(() => {
+    loadJobs()
+  }, [loadJobs])
+
+  // Listen for live ACKs from WebSocket (MQTT /ack topic)
+  useEffect(() => {
+    const unsubscribe = realtimeGpsService.subscribeToOta((data: any) => {
+      console.log('[OTA Page] WebSocket Event received:', data)
+      if (data.event === 'ota_ack') {
+        const { jobId: ackJobId, deviceId: ackImei, payload } = data
+        setOtaJobs((prev) => {
+          const next = [...prev]
+          for (let i = 0; i < next.length; i++) {
+            const matchJob = !ackJobId || next[i].jobId === ackJobId
+            const matchDevice = !ackImei || next[i].deviceId === ackImei
+            if (matchJob && matchDevice) {
+              next[i] = {
+                ...next[i],
+                status: 'acknowledged',
+                ackedAt: new Date().toISOString(),
+                ackPayload: typeof payload === 'string' ? payload : JSON.stringify(payload),
+              }
+            }
+          }
+          return next
+        })
+      } else if (data.event === 'ota_dispatch' && data.record) {
+        setOtaJobs((prev) => {
+          const filtered = prev.filter((j) => j.id !== data.record.id)
+          return [data.record, ...filtered]
+        })
+      }
+    })
+
+    return () => unsubscribe()
+  }, [])
+
+  // Filter devices by search and MQTT connection status
+  const filteredDevices = useMemo(() => {
+    return devices.filter((d) => {
+      const q = search.toLowerCase()
+      const matchesSearch =
+        !q ||
+        d.deviceId.toLowerCase().includes(q) ||
+        d.deviceName.toLowerCase().includes(q) ||
+        d.device.modelId.toLowerCase().includes(q)
+
+      if (!matchesSearch) return false
+
+      const isOnline = isDeviceMqttOnline(d.lastSeen)
+      if (filter === 'online') return isOnline
+      if (filter === 'offline') return !isOnline
+      return true
+    })
+  }, [devices, search, filter])
+
+  // Count stats
+  const onlineCount = useMemo(() => {
+    return devices.filter((d) => isDeviceMqttOnline(d.lastSeen)).length
+  }, [devices])
+  const offlineCount = devices.length - onlineCount
+
+  // Multi-select handlers
+  const toggleSelect = (deviceId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(deviceId)) next.delete(deviceId)
+      else next.add(deviceId)
+      return next
+    })
+  }
+
+  const selectAllFiltered = () => {
+    setSelectedIds(new Set(filteredDevices.map((d) => d.deviceId)))
+  }
+
+  const selectAllOnline = () => {
+    const onlineIds = devices.filter((d) => isDeviceMqttOnline(d.lastSeen)).map((d) => d.deviceId)
+    setSelectedIds(new Set(onlineIds))
+  }
+
+  const clearSelection = () => {
+    setSelectedIds(new Set())
+  }
+
+  // Pre-fill version templates when switching OTA type
+  const handleTypeChange = (type: OtaType) => {
+    setOtaType(type)
+    if (type === 'APP_OTA') {
+      setUrlAddress('https://firmware.gw1ns.io/builds/customer_app_v1.0.3.bin')
+      setVersion('WMZ_DEV_1.0.3')
+    } else {
+      setUrlAddress('https://firmware.gw1ns.io/patches/system_patch_v2.0.1.bin')
+      setVersion('WM_SDK_C_261009')
+    }
+  }
+
+  // Sample payload for preview (matching user's payload template)
+  const samplePayload = useMemo(() => {
+    const sampleImei = Array.from(selectedIds)[0] || '861185084122719'
+    const obj: any = {
+      ota_type: otaType,
+      jobId,
+      url_address: urlAddress,
+      file_sha256: fileSha256,
+    }
+    if (otaType === 'APP_OTA') {
+      obj.app_v = version
+    } else {
+      obj.sdk_v = version
+    }
+    return JSON.stringify(obj, null, 2)
+  }, [otaType, jobId, urlAddress, fileSha256, version, selectedIds])
+
+  const copyPayloadToClipboard = () => {
+    navigator.clipboard.writeText(samplePayload)
+    setCopiedPayload(true)
+    setTimeout(() => setCopiedPayload(false), 2000)
+  }
+
+  // Deploy OTA batch
+  const handleDeployOta = async () => {
+    if (selectedIds.size === 0) {
+      setDeployResult({ success: false, message: 'Please select at least one target device.' })
+      return
+    }
+
+    if (!urlAddress.trim()) {
+      setDeployResult({ success: false, message: 'Please provide a valid firmware URL address.' })
+      return
+    }
+
+    if (!version.trim()) {
+      setDeployResult({ success: false, message: 'Please provide the target version.' })
+      return
+    }
+
+    setIsDeploying(true)
+    setDeployResult(null)
+
+    try {
+      const res = await otaService.deployOta({
+        deviceIds: Array.from(selectedIds),
+        otaType,
+        jobId,
+        urlAddress,
+        fileSha256,
+        version,
+      })
+
+      if (res.success) {
+        setDeployResult({
+          success: true,
+          message: `Successfully dispatched ${res.count} ${otaType} payloads for Job ID ${jobId}. Now monitoring for acknowledgments on /ack!`,
+        })
+        await loadJobs()
+        // Switch to history/monitor tab after 1.5 seconds
+        setTimeout(() => setActiveTab('history'), 1500)
+        // Refresh Job ID for next deployment
+        setJobId(`J${Math.floor(100 + Math.random() * 900)}`)
+      } else {
+        setDeployResult({ success: false, message: res.error || 'Failed to dispatch OTA update.' })
+      }
+    } catch (err: any) {
+      setDeployResult({ success: false, message: err.message || 'Error occurred while deploying OTA.' })
+    } finally {
+      setIsDeploying(false)
+    }
+  }
+
+  const handleSimulateAck = async (jId: string, dId: string) => {
+    await otaService.simulateAck(jId, dId)
+    await loadJobs()
+  }
+
+  if (loading && devices.length === 0) {
+    return <LoadingSpinner message="Loading fleet trackers for OTA management..." className="min-h-[60vh]" />
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Top Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md shadow-indigo-500/20 text-white">
+              <UploadCloud className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                OTA Updates
+              </h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Batch Over-The-Air firmware and system patch deployment with real-time MQTT acknowledgment tracking
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Top Tab Switcher */}
+        <div className="flex items-center rounded-xl bg-slate-100 p-1 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+          <button
+            onClick={() => setActiveTab('deploy')}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition ${
+              activeTab === 'deploy'
+                ? 'bg-white text-slate-900 shadow-xs dark:bg-slate-900 dark:text-slate-100'
+                : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <UploadCloud className="h-4 w-4 text-emerald-500" />
+            <span>Deploy Batch OTA</span>
+            {selectedIds.size > 0 && (
+              <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.2 font-mono text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+                {selectedIds.size}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition ${
+              activeTab === 'history'
+                ? 'bg-white text-slate-900 shadow-xs dark:bg-slate-900 dark:text-slate-100'
+                : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <Radio className="h-4 w-4 text-indigo-500" />
+            <span>ACK Monitor & History</span>
+            {otaJobs.length > 0 && (
+              <span className="rounded-full bg-indigo-500/20 px-1.5 py-0.2 font-mono text-[10px] text-indigo-600 dark:text-indigo-400 font-bold">
+                {otaJobs.length}
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {deployResult && (
+        <div
+          className={`flex items-center justify-between rounded-xl p-4 text-xs font-medium border ${
+            deployResult.success
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+              : 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            {deployResult.success ? (
+              <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 text-rose-500 flex-shrink-0" />
+            )}
+            <span>{deployResult.message}</span>
+          </div>
+          <button
+            onClick={() => setDeployResult(null)}
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* TAB 1: DEPLOY OTA */}
+      {activeTab === 'deploy' && (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+          {/* LEFT 7 COLS: Device Selection & Online/Offline Filters */}
+          <div className="lg:col-span-7 space-y-4">
+            <Card padding="md">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-emerald-500" />
+                    Target Fleet Devices
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Select target IMEIs to receive the downlink OTA payload
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-mono">
+                    {selectedIds.size} of {devices.length} Selected
+                  </span>
+                </div>
+              </div>
+
+              {/* Search & Online/Offline Filter Tabs */}
+              <div className="flex flex-col sm:flex-row items-center gap-3 mb-4">
+                <div className="relative flex-1 w-full">
+                  <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search IMEI, Model, Name..."
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-1.5 pl-9 pr-3 text-xs text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                  <button
+                    onClick={() => setFilter('all')}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                      filter === 'all'
+                        ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                    }`}
+                  >
+                    All ({devices.length})
+                  </button>
+                  <button
+                    onClick={() => setFilter('online')}
+                    className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                      filter === 'online'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-100 text-emerald-600 hover:bg-emerald-50 dark:bg-slate-800 dark:text-emerald-400'
+                    }`}
+                  >
+                    <Wifi className="h-3 w-3" />
+                    <span>Online ({onlineCount})</span>
+                  </button>
+                  <button
+                    onClick={() => setFilter('offline')}
+                    className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                      filter === 'offline'
+                        ? 'bg-slate-600 text-white'
+                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'
+                    }`}
+                  >
+                    <WifiOff className="h-3 w-3" />
+                    <span>Offline ({offlineCount})</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Bulk Selection Actions */}
+              <div className="flex flex-wrap items-center justify-between gap-2 py-2 px-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 mb-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={selectAllFiltered}
+                    className="font-medium text-emerald-600 hover:text-emerald-500 dark:text-emerald-400 hover:underline"
+                  >
+                    Select All Filtered ({filteredDevices.length})
+                  </button>
+                  <span className="text-slate-300 dark:text-slate-700">&middot;</span>
+                  <button
+                    onClick={selectAllOnline}
+                    className="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 hover:underline"
+                  >
+                    Select All Online ({onlineCount})
+                  </button>
+                </div>
+
+                {selectedIds.size > 0 && (
+                  <button
+                    onClick={clearSelection}
+                    className="font-medium text-rose-500 hover:text-rose-400 hover:underline"
+                  >
+                    Clear Selection
+                  </button>
+                )}
+              </div>
+
+              {/* Device List Table */}
+              {filteredDevices.length === 0 ? (
+                <EmptyState
+                  icon={<SlidersHorizontal className="h-8 w-8 text-slate-400" />}
+                  title="No Matching Devices"
+                  description="No tracker matched your current filter criteria."
+                />
+              ) : (
+                <div className="overflow-x-auto max-h-[500px] overflow-y-auto rounded-xl border border-slate-200/80 dark:border-slate-800">
+                  <table className="w-full text-left text-xs">
+                    <thead className="sticky top-0 z-10 bg-slate-100/90 dark:bg-slate-800/90 backdrop-blur-xs border-b border-slate-200 dark:border-slate-700">
+                      <tr>
+                        <th className="px-3 py-2.5 w-10 text-center">
+                          <input
+                            type="checkbox"
+                            checked={
+                              filteredDevices.length > 0 &&
+                              filteredDevices.every((d) => selectedIds.has(d.deviceId))
+                            }
+                            onChange={(e) => {
+                              if (e.target.checked) selectAllFiltered()
+                              else clearSelection()
+                            }}
+                            className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 dark:border-slate-600"
+                          />
+                        </th>
+                        <th className="px-3 py-2.5 font-bold text-slate-600 dark:text-slate-300">Device / IMEI</th>
+                        <th className="px-3 py-2.5 font-bold text-slate-600 dark:text-slate-300">MQTT Link</th>
+                        <th className="px-3 py-2.5 font-bold text-slate-600 dark:text-slate-300">Current Versions</th>
+                        <th className="px-3 py-2.5 font-bold text-slate-600 dark:text-slate-300">Last Seen</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {filteredDevices.map((d) => {
+                        const isSelected = selectedIds.has(d.deviceId)
+                        const isOnline = isDeviceMqttOnline(d.lastSeen)
+
+                        return (
+                          <tr
+                            key={d.deviceId}
+                            onClick={() => toggleSelect(d.deviceId)}
+                            className={`cursor-pointer transition ${
+                              isSelected
+                                ? 'bg-emerald-500/10 dark:bg-emerald-500/15'
+                                : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                            }`}
+                          >
+                            <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleSelect(d.deviceId)}
+                                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 dark:border-slate-600 cursor-pointer"
+                              />
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <p className="font-bold text-slate-900 dark:text-slate-100">{d.deviceName}</p>
+                              <p className="font-mono text-[11px] text-slate-400">IMEI: {d.deviceId}</p>
+                            </td>
+                            <td className="px-3 py-2.5">
+                              {isOnline ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                  <span>Online (MQTT)</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-slate-200/60 dark:bg-slate-700/60 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                                  <span>Offline</span>
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5 text-slate-500 font-mono text-[11px]">
+                              <div>App: <strong className="text-slate-700 dark:text-slate-300">{d.device.appVersion || 'WMZ_DEV_1.0.2'}</strong></div>
+                              <div className="text-[10px] text-slate-400">SDK: {d.device.sdkVersion || 'WM_SDK_C_261008'}</div>
+                            </td>
+                            <td className="px-3 py-2.5 text-slate-400 text-[11px]">
+                              <p>{formatRelativeTime(d.lastSeen)}</p>
+                              <p className="font-mono text-[10px] text-slate-400">{formatTimeSafe(d.lastSeen, 'HH:mm:ss')}</p>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </div>
+
+          {/* RIGHT 5 COLS: OTA Configuration & Payload Builder Form */}
+          <div className="lg:col-span-5 space-y-4">
+            <Card padding="md">
+              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2 mb-4">
+                <FileCode className="h-4 w-4 text-purple-500" />
+                OTA Package Configuration
+              </h2>
+
+              {/* OTA Type Radio Cards */}
+              <div className="mb-4 space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                  Select OTA Firmware Type:
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleTypeChange('APP_OTA')}
+                    className={`flex flex-col items-start p-3 rounded-xl border text-left transition ${
+                      otaType === 'APP_OTA'
+                        ? 'border-emerald-500 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100 ring-1 ring-emerald-500'
+                        : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="font-bold text-xs">APP_OTA</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Customer Application Update
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleTypeChange('DF_OTA')}
+                    className={`flex flex-col items-start p-3 rounded-xl border text-left transition ${
+                      otaType === 'DF_OTA'
+                        ? 'border-purple-500 bg-purple-500/10 text-purple-900 dark:text-purple-100 ring-1 ring-purple-500'
+                        : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="font-bold text-xs">DF_OTA</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      System Differential Patch
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Job ID Input */}
+              <div className="mb-3 space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Job ID (<code className="text-slate-400">jobId</code>)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setJobId(`J${Math.floor(100 + Math.random() * 900)}`)}
+                    className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
+                  >
+                    <RefreshCw className="h-3 w-3" /> Auto-generate
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={jobId}
+                  onChange={(e) => setJobId(e.target.value)}
+                  placeholder="e.g. J1, J2, JOB_OTA_01"
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-mono text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              {/* URL Address Input */}
+              <div className="mb-3 space-y-1">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                  Firmware Binary URL (<code className="text-slate-400">url_address</code>)
+                </label>
+                <input
+                  type="url"
+                  value={urlAddress}
+                  onChange={(e) => setUrlAddress(e.target.value)}
+                  placeholder="https://domain.com/firmware/customer_app.bin"
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-mono text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              {/* Version Input (App_v or SDK_v) */}
+              <div className="mb-3 space-y-1">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                  {otaType === 'APP_OTA' ? (
+                    <>Target App Version (<code className="text-slate-400">app_v</code>)</>
+                  ) : (
+                    <>Target SDK Version (<code className="text-slate-400">sdk_v</code>)</>
+                  )}
+                </label>
+                <input
+                  type="text"
+                  value={version}
+                  onChange={(e) => setVersion(e.target.value)}
+                  placeholder={otaType === 'APP_OTA' ? 'e.g. WMZ_DEV_1.0.3' : 'e.g. WM_SDK_C_261009'}
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-mono text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              {/* File SHA-256 */}
+              <div className="mb-4 space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    File Checksum (<code className="text-slate-400">file_sha256</code>)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFileSha256(
+                        Array.from({ length: 64 }, () =>
+                          Math.floor(Math.random() * 16).toString(16)
+                        ).join('')
+                      )
+                    }
+                    className="text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:underline"
+                  >
+                    Generate Hex
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={fileSha256}
+                  onChange={(e) => setFileSha256(e.target.value)}
+                  placeholder="64-character hex SHA-256 hash"
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-mono text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              {/* Live Payload Preview */}
+              <div className="mb-4 rounded-xl bg-slate-950 p-3 text-slate-200 border border-slate-800">
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-[11px]">
+                  <span className="font-bold text-slate-400">MQTT Downlink Payload Template</span>
+                  <button
+                    type="button"
+                    onClick={copyPayloadToClipboard}
+                    className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 transition"
+                  >
+                    {copiedPayload ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    <span>{copiedPayload ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+                <pre className="font-mono text-[11px] leading-relaxed text-emerald-400 overflow-x-auto whitespace-pre-wrap">
+                  {samplePayload}
+                </pre>
+                <p className="mt-2 text-[10px] text-slate-500">
+                  ⚡ Published to <code className="text-slate-400">soundbox_dev/&lt;IMEI&gt;/command</code> and listening for responses on <code className="text-slate-400">/ack</code>.
+                </p>
+              </div>
+
+              {/* Submit / Deploy Button */}
+              <button
+                type="button"
+                disabled={isDeploying || selectedIds.size === 0}
+                onClick={handleDeployOta}
+                className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold text-white shadow-md transition flex items-center justify-center gap-2 ${
+                  isDeploying || selectedIds.size === 0
+                    ? 'bg-slate-400 cursor-not-allowed dark:bg-slate-700'
+                    : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20'
+                }`}
+              >
+                {isDeploying ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    <span>Dispatching {selectedIds.size} OTA Payloads over MQTT...</span>
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud className="h-4 w-4" />
+                    <span>
+                      Deploy OTA to {selectedIds.size} Selected Device{selectedIds.size === 1 ? '' : 's'}
+                    </span>
+                  </>
+                )}
+              </button>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: LIVE ACK MONITOR & HISTORY */}
+      {activeTab === 'history' && (
+        <div className="space-y-4">
+          <Card padding="md">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                  <Radio className="h-4 w-4 text-emerald-500" />
+                  Live OTA Acknowledgment Monitor
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Real-time status of dispatched OTA packets listening for device ACKs on <code className="text-emerald-500">/ack</code> and <code className="text-emerald-500">soundbox_dev/+/ack</code>
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={loadJobs}
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  <span>Refresh</span>
+                </button>
+              </div>
+            </div>
+
+            {otaJobs.length === 0 ? (
+              <EmptyState
+                icon={<UploadCloud className="h-10 w-10 text-slate-400" />}
+                title="No OTA Dispatches Yet"
+                description="Deploy firmware or system patch updates to devices to view real-time transmission and acknowledgment records."
+                action={
+                  <button
+                    onClick={() => setActiveTab('deploy')}
+                    className="mt-3 flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-500 transition"
+                  >
+                    <UploadCloud className="h-4 w-4" />
+                    <span>Go to Deploy OTA</span>
+                  </button>
+                }
+              />
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-800/50">
+                      <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">Job ID</th>
+                      <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">Target Device (IMEI)</th>
+                      <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">Type & Version</th>
+                      <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">MQTT Status</th>
+                      <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">Dispatched Time</th>
+                      <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">ACK Response</th>
+                      <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {otaJobs.map((job) => {
+                      const isAcked = job.status === 'acknowledged'
+
+                      return (
+                        <tr
+                          key={job.id}
+                          className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition"
+                        >
+                          <td className="px-4 py-3">
+                            <span className="font-mono font-bold text-slate-900 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">
+                              {job.jobId}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="font-mono font-bold text-slate-800 dark:text-slate-200">{job.deviceId}</p>
+                            <p className="text-[10px] text-slate-400">
+                              Topic: soundbox_dev/{job.deviceId}/command
+                            </p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-block font-bold text-[10px] px-2 py-0.5 rounded-md ${
+                                job.otaType === 'APP_OTA'
+                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                  : 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                              }`}
+                            >
+                              {job.otaType}
+                            </span>
+                            <p className="font-mono text-[11px] text-slate-700 dark:text-slate-300 mt-0.5">
+                              {job.version}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3">
+                            {isAcked ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                                <span>ACK Received</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-semibold text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                                <Clock className="h-3.5 w-3.5 animate-spin text-amber-500" />
+                                <span>Waiting for /ack</span>
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-slate-400 text-[11px]">
+                            <p>{formatRelativeTime(job.sentAt)}</p>
+                            <p className="font-mono text-[10px]">{formatTimeSafe(job.sentAt, 'HH:mm:ss')}</p>
+                          </td>
+                          <td className="px-4 py-3">
+                            {job.ackPayload ? (
+                              <button
+                                onClick={() => setSelectedJobForModal(job)}
+                                className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-1 rounded-md border border-emerald-500/30 transition flex items-center gap-1"
+                              >
+                                <Check className="h-3 w-3" />
+                                <span>View Response</span>
+                              </button>
+                            ) : (
+                              <span className="text-slate-400 text-[11px]">Pending...</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {!isAcked && (
+                              <button
+                                onClick={() => handleSimulateAck(job.jobId, job.deviceId)}
+                                title="Simulate incoming ACK packet from device"
+                                className="rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-600 dark:bg-slate-800 dark:hover:bg-slate-700 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition"
+                              >
+                                Test ACK
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* ACK Payload Details Modal */}
+      {selectedJobForModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800 mb-4">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                  ACK Payload &middot; Job {selectedJobForModal.jobId}
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedJobForModal(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg font-bold"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Target Device IMEI</span>
+                  <span className="font-mono font-bold">{selectedJobForModal.deviceId}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Acknowledged At</span>
+                  <span className="font-mono font-bold">
+                    {formatTimeSafe(selectedJobForModal.ackedAt, 'HH:mm:ss')} ({formatRelativeTime(selectedJobForModal.ackedAt)})
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-slate-400 font-semibold block mb-1">Raw Acknowledgment JSON:</span>
+                <pre className="rounded-xl bg-slate-950 p-3 font-mono text-[11px] text-emerald-400 overflow-x-auto whitespace-pre-wrap border border-slate-800">
+                  {selectedJobForModal.ackPayload || 'No payload recorded'}
+                </pre>
+              </div>
+
+              <div>
+                <span className="text-slate-400 font-semibold block mb-1">Dispatched Downlink Payload:</span>
+                <pre className="rounded-xl bg-slate-950 p-3 font-mono text-[11px] text-slate-300 overflow-x-auto whitespace-pre-wrap border border-slate-800">
+                  {selectedJobForModal.payload}
+                </pre>
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button
+                onClick={() => setSelectedJobForModal(null)}
+                className="px-4 py-2 rounded-xl bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-xs font-bold hover:opacity-90 transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

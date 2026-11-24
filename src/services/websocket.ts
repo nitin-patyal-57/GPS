@@ -3,12 +3,14 @@ import type { GpsDevice, GpsAlert } from '@/types/gps'
 
 type DeviceUpdateCallback = (deviceId: string, data: GpsDevice) => void
 type AlertCallback = (alert: GpsAlert) => void
+type OtaCallback = (data: any) => void
 
 class RealtimeGpsService {
   private ws: WebSocket | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private deviceCallbacks: Set<DeviceUpdateCallback> = new Set()
   private alertCallbacks: Set<AlertCallback> = new Set()
+  private otaCallbacks: Set<OtaCallback> = new Set()
   private isConnected = false
 
   constructor() {
@@ -39,6 +41,8 @@ class RealtimeGpsService {
             this.deviceCallbacks.forEach((cb) => cb(deviceId, data))
           } else if (msg.event === 'alert' && msg.data) {
             this.alertCallbacks.forEach((cb) => cb(msg.data))
+          } else if ((msg.event === 'ota_ack' || msg.event === 'ota_dispatch') && msg.data) {
+            this.otaCallbacks.forEach((cb) => cb({ event: msg.event, ...msg.data }))
           }
         } catch {
           // ignore non-json messages
@@ -77,6 +81,13 @@ class RealtimeGpsService {
     this.alertCallbacks.add(callback)
     return () => {
       this.alertCallbacks.delete(callback)
+    }
+  }
+
+  public subscribeToOta(callback: OtaCallback): () => void {
+    this.otaCallbacks.add(callback)
+    return () => {
+      this.otaCallbacks.delete(callback)
     }
   }
 
