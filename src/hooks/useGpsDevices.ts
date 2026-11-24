@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { GpsDevice, GpsAlert, LocationHistoryEntry } from '@/types/gps'
-import { gpsService } from '@/services/gpsService'
+import { gpsService, DEMO_DEVICE_IDS, getDeletedDeviceIds } from '@/services/gpsService'
 import { realtimeGpsService } from '@/services/websocket'
 import { useRefresh } from '@/context/RefreshContext'
 
@@ -13,7 +13,11 @@ export function useGpsDevices() {
   const fetchDevices = useCallback(async () => {
     try {
       const data = await gpsService.getDevices()
-      setDevices(data)
+      const deleted = getDeletedDeviceIds()
+      const clean = data.filter(
+        (d) => d && d.deviceId && !DEMO_DEVICE_IDS.has(d.deviceId) && !deleted.has(d.deviceId)
+      )
+      setDevices(clean)
       setError(null)
     } catch (err: any) {
       setError(err.message || 'Failed to load GPS devices')
@@ -29,14 +33,23 @@ export function useGpsDevices() {
   // Real-time WebSocket updates
   useEffect(() => {
     const unsubscribe = realtimeGpsService.subscribeToDeviceUpdates((deviceId, updatedDevice) => {
+      // Strictly ignore decommissioned demo devices and user-deleted devices
+      if (!deviceId || DEMO_DEVICE_IDS.has(deviceId)) return
+      const deleted = getDeletedDeviceIds()
+      if (deleted.has(deviceId)) return
+
       setDevices((prev) => {
-        const index = prev.findIndex((d) => d.deviceId === deviceId)
+        // Strip out any stale demo devices or deleted items
+        const cleanPrev = prev.filter(
+          (d) => d && d.deviceId && !DEMO_DEVICE_IDS.has(d.deviceId) && !deleted.has(d.deviceId)
+        )
+        const index = cleanPrev.findIndex((d) => d.deviceId === deviceId)
         if (index >= 0) {
-          const next = [...prev]
+          const next = [...cleanPrev]
           next[index] = { ...next[index], ...updatedDevice }
           return next
         }
-        return [updatedDevice, ...prev]
+        return [updatedDevice, ...cleanPrev]
       })
     })
 
@@ -47,13 +60,17 @@ export function useGpsDevices() {
     async (params: { imei: string; deviceName?: string; modelId?: string }) => {
       const newDev = await gpsService.addDevice(params)
       setDevices((prev) => {
-        const existing = prev.findIndex((d) => d.deviceId === newDev.deviceId)
+        const deleted = getDeletedDeviceIds()
+        const cleanPrev = prev.filter(
+          (d) => d && d.deviceId && !DEMO_DEVICE_IDS.has(d.deviceId) && !deleted.has(d.deviceId)
+        )
+        const existing = cleanPrev.findIndex((d) => d.deviceId === newDev.deviceId)
         if (existing >= 0) {
-          const next = [...prev]
+          const next = [...cleanPrev]
           next[existing] = newDev
           return next
         }
-        return [newDev, ...prev]
+        return [newDev, ...cleanPrev]
       })
       return newDev
     },
@@ -76,10 +93,16 @@ export function useGpsDevice(deviceId: string) {
   const { refreshCount } = useRefresh()
 
   const fetchDevice = useCallback(async () => {
-    if (!deviceId) return
+    if (!deviceId || DEMO_DEVICE_IDS.has(deviceId) || getDeletedDeviceIds().has(deviceId)) {
+      setDevice(null)
+      setError(`Device ${deviceId} not found`)
+      setLoading(false)
+      return
+    }
+
     try {
       const data = await gpsService.getDeviceById(deviceId)
-      if (data) {
+      if (data && !DEMO_DEVICE_IDS.has(data.deviceId)) {
         setDevice(data)
         setError(null)
       } else {
@@ -98,9 +121,9 @@ export function useGpsDevice(deviceId: string) {
 
   // Real-time device update
   useEffect(() => {
-    if (!deviceId) return
+    if (!deviceId || DEMO_DEVICE_IDS.has(deviceId)) return
     const unsubscribe = realtimeGpsService.subscribeToDeviceUpdates((id, updatedDevice) => {
-      if (id === deviceId) {
+      if (id === deviceId && !getDeletedDeviceIds().has(id)) {
         setDevice((prev) => (prev ? { ...prev, ...updatedDevice } : updatedDevice))
       }
     })
@@ -116,7 +139,10 @@ export function useLocationHistory(deviceId: string, from?: string, to?: string)
   const [error, setError] = useState<string | null>(null)
 
   const fetchHistory = useCallback(async () => {
-    if (!deviceId) return
+    if (!deviceId || DEMO_DEVICE_IDS.has(deviceId) || getDeletedDeviceIds().has(deviceId)) {
+      setHistory([])
+      return
+    }
     setLoading(true)
     try {
       const data = await gpsService.getLocationHistory(deviceId, from, to)
@@ -139,12 +165,17 @@ export function useLocationHistory(deviceId: string, from?: string, to?: string)
 export function useGpsAlerts() {
   const [alerts, setAlerts] = useState<GpsAlert[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const { refreshCount } = useRefresh()
 
   const fetchAlerts = useCallback(async () => {
     try {
       const data = await gpsService.getAlerts()
-      setAlerts(data)
+      const deleted = getDeletedDeviceIds()
+      setAlerts(data.filter((a) => !DEMO_DEVICE_IDS.has(a.deviceId) && !deleted.has(a.deviceId)))
+      setError(null)
+    } catch (err: any) {
+      setError(err.message || 'Failed to load alerts')
     } finally {
       setLoading(false)
     }
@@ -155,20 +186,25 @@ export function useGpsAlerts() {
   }, [fetchAlerts, refreshCount])
 
   useEffect(() => {
-    const unsub = realtimeGpsService.subscribeToAlerts((newAlert) => {
-      setAlerts((prev) => [newAlert, ...prev.filter((a) => a.id !== newAlert.id)])
+    const unsubscribe = realtimeGpsService.subscribeToAlerts((alert) => {
+      if (DEMO_DEVICE_IDS.has(alert.deviceId) || getDeletedDeviceIds().has(alert.deviceId)) return
+      setAlerts((prev) => [alert, ...prev.filter((a) => a.id !== alert.id)])
     })
-    return () => unsub()
+    return () => unsubscribe()
   }, [])
 
-  const acknowledgeAlert = async (alertId: string) => {
-    await gpsService.acknowledgeAlert(alertId)
-    setAlerts((prev) => prev.map((a) => (a.id === alertId ? { ...a, acknowledged: true } : a)))
-  }
+  const acknowledgeAlert = useCallback(async (alertId: string) => {
+    const ok = await gpsService.acknowledgeAlert(alertId)
+    if (ok) {
+      setAlerts((prev) =>
+        prev.map((a) => (a.id === alertId ? { ...a, acknowledged: true } : a))
+      )
+    }
+  }, [])
 
-  const acknowledgeAllAlerts = async () => {
+  const acknowledgeAllAlerts = useCallback(async () => {
     setAlerts((prev) => prev.map((a) => ({ ...a, acknowledged: true })))
-  }
+  }, [])
 
-  return { alerts, loading, acknowledgeAlert, acknowledgeAllAlerts, refetch: fetchAlerts }
+  return { alerts, loading, error, refetch: fetchAlerts, acknowledgeAlert, acknowledgeAllAlerts }
 }
