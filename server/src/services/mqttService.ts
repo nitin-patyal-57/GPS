@@ -8,9 +8,66 @@ const AWS_IOT_ENDPOINT = process.env.MQTT_BROKER_URL || 'mqtts://avj249ldc7joq-a
 const TOPIC_SOUNDBOX_METRICS = 'soundbox_dev/+/metrics'
 const TOPIC_SOUNDBOX_ACK = 'soundbox_dev/+/ack'
 const TOPIC_SOUNDBOX_CMD_PREFIX = 'soundbox_dev/'
+const TOPIC_LEGACY_GPS_UPLINK = 'wegw/+/gps/nmea'
 
 let mqttClient: mqtt.MqttClient | null = null
 let broadcastFn: ((event: string, data: unknown) => void) | null = null
+
+function parseNmeaCoord(val: string, dir: string): number {
+  if (!val || !dir) return 0
+  const dotIndex = val.indexOf('.')
+  if (dotIndex < 2) return 0
+  const degDigits = dir === 'N' || dir === 'S' ? 2 : 3
+  const degrees = parseFloat(val.substring(0, degDigits))
+  const minutes = parseFloat(val.substring(degDigits))
+  if (isNaN(degrees) || isNaN(minutes)) return 0
+  let decimal = degrees + minutes / 60.0
+  if (dir === 'S' || dir === 'W') decimal = -decimal
+  return parseFloat(decimal.toFixed(6))
+}
+
+function parseNmeaPayload(rawPayload: string): { latitude: number; longitude: number; speed: number; heading: number; satellites: number; altitude: number; isFixed: boolean } | null {
+  const lines = rawPayload.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.startsWith('$'))
+  if (lines.length === 0) return null
+
+  let latitude = 0
+  let longitude = 0
+  let altitude = 0
+  let speed = 0
+  let heading = 0
+  let satellites = 0
+  let fixQuality = 0
+  let rmcValid = false
+
+  for (const line of lines) {
+    const cleanLine = line.split('*')[0]
+    const parts = cleanLine.split(',')
+    const sentenceType = parts[0].substring(3)
+
+    if (sentenceType === 'GGA') {
+      if (parts[2] && parts[3] && parts[4] && parts[5]) {
+        latitude = parseNmeaCoord(parts[2], parts[3])
+        longitude = parseNmeaCoord(parts[4], parts[5])
+      }
+      fixQuality = parseInt(parts[6] || '0', 10)
+      satellites = parseInt(parts[7] || '0', 10)
+      altitude = parseFloat(parts[9] || '0')
+    } else if (sentenceType === 'RMC') {
+      if (parts[2] === 'A') rmcValid = true
+      if (parts[3] && parts[4] && parts[5] && parts[6]) {
+        latitude = parseNmeaCoord(parts[3], parts[4])
+        longitude = parseNmeaCoord(parts[5], parts[6])
+      }
+      const speedKnots = parseFloat(parts[7] || '0')
+      if (!isNaN(speedKnots)) speed = parseFloat((speedKnots * 1.852).toFixed(2))
+      const cog = parseFloat(parts[8] || '0')
+      if (!isNaN(cog)) heading = parseFloat(cog.toFixed(1))
+    }
+  }
+
+  const isFixed = fixQuality > 0 || rmcValid
+  return { latitude, longitude, speed, heading, satellites, altitude, isFixed }
+}
 
 function parseNum(v: any, fallback = 0): number {
   if (v === '' || v === undefined || v === null) return fallback
@@ -198,6 +255,96 @@ function handleMqttMessage(topic: string, messageBuffer: Buffer) {
         console.error(`[MQTT] Failed to parse metrics JSON from ${imei}:`, e)
       }
     }
+
+    const nmeaMatch = topic.match(/^wegw\/([^/]+)\/gps\/nmea$/)
+    if (nmeaMatch) {
+      const imei = nmeaMatch[1]
+      if (imei.startsWith('86750908') || imei === '867509082945058' || imei === '861185084200101') return
+      const existing = db.prepare('SELECT * FROM devices WHERE deviceId = ?').get(imei) as any
+      if (!existing && imei !== '861185084122719') return
+
+      try {
+        const parsed = parseNmeaPayload(rawPayload)
+        if (parsed && (parsed.latitude !== 0 || parsed.longitude !== 0 || parsed.isFixed)) {
+          let currentData: any = null
+          try {
+            if (existing) currentData = JSON.parse(existing.data)
+          } catch {}
+
+          const updated = currentData || {
+            deviceId: imei,
+            deviceName: `GW1NS-4 (${imei})`,
+            status: 'online',
+            motionState: parsed.speed > 1.5 ? 'moving' : 'stationary',
+            lastSeen: now,
+            device: { imei, modelId: 'GW1NS-4' },
+            power: { batteryVoltage: 4.2, batteryPercentage: 100 },
+            cellular: { operator: 'Cellular', signal: 'GOOD', signalQuality: 4, rssi: 25 },
+            accelerometer: { status: 'OK', motion: parsed.speed > 1.5 },
+          }
+
+          updated.gps = {
+            status: parsed.isFixed ? 'FIXED' : 'SEARCHING',
+            isFixed: parsed.isFixed,
+            latitude: parsed.latitude,
+            longitude: parsed.longitude,
+            altitudeM: parsed.altitude,
+            speedKmph: parsed.speed,
+            headingDeg: parsed.heading,
+            satellites: parsed.satellites,
+            accuracyM: 3.0,
+            fixType: '3D',
+            lastFix: now,
+            location: `${parsed.latitude.toFixed(5)}, ${parsed.longitude.toFixed(5)}`,
+          }
+          updated.lastSeen = now
+          updated.motionState = parsed.speed > 1.5 ? 'moving' : 'stationary'
+
+          db.prepare(`
+            INSERT INTO devices (deviceId, deviceName, status, lastSeen, data, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(deviceId) DO UPDATE SET
+              status = excluded.status,
+              lastSeen = excluded.lastSeen,
+              data = excluded.data,
+              updatedAt = excluded.updatedAt
+          `).run(imei, updated.deviceName, 'online', now, JSON.stringify(updated), now)
+
+          if (parsed.latitude !== 0 && parsed.longitude !== 0) {
+            db.prepare(`
+              INSERT INTO device_history 
+              (deviceId, latitude, longitude, altitude, speed, heading, accuracy, satellites,
+               batteryPercentage, batteryVoltage, signalQuality, rssi, timestamp)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              imei,
+              parsed.latitude,
+              parsed.longitude,
+              parsed.altitude,
+              parsed.speed,
+              parsed.heading,
+              3.0,
+              parsed.satellites,
+              updated.power?.batteryPercentage || 100,
+              updated.power?.batteryVoltage || 4.2,
+              4,
+              25,
+              now
+            )
+          }
+
+          if (broadcastFn) {
+            broadcastFn('device_update', {
+              deviceId: imei,
+              data: updated,
+              timestamp: now,
+            })
+          }
+        }
+      } catch (err: any) {
+        console.error('[MQTT] NMEA error:', err.message)
+      }
+    }
   } catch (err) {
     console.error('[MQTT] Message error:', err)
   }
@@ -321,9 +468,9 @@ export function initMqttService(broadcast: (event: string, data: unknown) => voi
 
     mqttClient.on('connect', () => {
       console.log(`[MQTT] Connected successfully to AWS IoT Core broker!`)
-      mqttClient?.subscribe([TOPIC_SOUNDBOX_METRICS, TOPIC_SOUNDBOX_ACK], { qos: 1 }, (err) => {
+      mqttClient?.subscribe([TOPIC_SOUNDBOX_METRICS, TOPIC_SOUNDBOX_ACK, TOPIC_LEGACY_GPS_UPLINK], { qos: 1 }, (err) => {
         if (err) console.error('[MQTT] Subscription error:', err)
-        else console.log(`[MQTT] Subscribed to telemetry topic: ${TOPIC_SOUNDBOX_METRICS}`)
+        else console.log(`[MQTT] Subscribed to topics: ${TOPIC_SOUNDBOX_METRICS}, ${TOPIC_LEGACY_GPS_UPLINK}`)
       })
     })
 
