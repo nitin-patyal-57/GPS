@@ -68,3 +68,7 @@ initDatabase().then(() => {
   console.error('Failed to initialize GPS server:', err)
   process.exit(1)
 })
+
+export default app
+export { app, server }
+
