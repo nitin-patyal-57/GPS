@@ -13,7 +13,6 @@ server/node_modules/
 
 # Production build outputs
 dist/
-server/dist/
 *.tsbuildinfo
 
 # Local databases
