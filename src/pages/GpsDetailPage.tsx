@@ -24,7 +24,7 @@ import {
   RefreshCw,
   Power,
 } from 'lucide-react'
-import { formatTimeSafe, formatUptime, getHeadingDirection } from '@/utils/helpers'
+import { formatTimeSafe, formatRelativeTime, formatUptime, getHeadingDirection } from '@/utils/helpers'
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -107,9 +107,13 @@ export default function GpsDetailPage() {
                 pulse={isMoving}
               />
             </div>
-            <p className="font-mono text-xs text-slate-400">
-              IMEI: {device.deviceId} &middot; Model: {device.device.modelId}
-            </p>
+            <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-400 mt-1">
+              <span className="font-mono">IMEI: {device.deviceId} &middot; Model: {device.device.modelId}</span>
+              <span className="inline-flex items-center gap-1 text-emerald-500 font-medium bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                <Clock className="h-3 w-3 animate-pulse" />
+                <span>Last Telemetry: {formatRelativeTime(device.lastSeen)} ({formatTimeSafe(device.lastSeen, 'HH:mm:ss')})</span>
+              </span>
+            </div>
           </div>
         </div>
 

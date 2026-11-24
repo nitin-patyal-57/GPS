@@ -40,6 +40,24 @@ export function markDeviceDeleted(deviceId: string) {
   } catch {}
 }
 
+export function purgeStaleStorage(): void {
+  try {
+    const raw = localStorage.getItem(STORAGE_CUSTOM_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        const cleaned = parsed.filter((d) => d && d.deviceId && !isIgnoredDevice(d.deviceId))
+        if (cleaned.length !== parsed.length) {
+          localStorage.setItem(STORAGE_CUSTOM_KEY, JSON.stringify(cleaned))
+        }
+      }
+    }
+  } catch {}
+}
+
+// Automatically purge legacy soundbox devices from local cache
+purgeStaleStorage()
+
 export function getCustomDevicesFromStorage(): GpsDevice[] {
   try {
     const raw = localStorage.getItem(STORAGE_CUSTOM_KEY)

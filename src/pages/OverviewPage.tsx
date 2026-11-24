@@ -19,7 +19,7 @@ import {
   Compass,
 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-import { formatTimeSafe, getHeadingDirection } from '@/utils/helpers'
+import { formatTimeSafe, formatRelativeTime, getHeadingDirection } from '@/utils/helpers'
 
 export default function OverviewPage() {
   const { devices, loading, error, refetch } = useGpsDevices()
@@ -182,7 +182,7 @@ export default function OverviewPage() {
                       {device.gps?.satellites ?? 0} Sats ({device.gps?.fixType ?? '3D'})
                     </span>
                     <p className="text-[10px] text-slate-400 mt-0.5">
-                      {isMoving ? `Speed: ${speed.toFixed(1)} km/h` : 'Parked'}
+                      {isMoving ? `Speed: ${speed.toFixed(1)} km/h` : 'Parked'} &middot; {formatRelativeTime(device.lastSeen)}
                     </p>
                   </div>
                 </div>
@@ -250,6 +250,13 @@ export default function OverviewPage() {
                         {Math.round(heading)}° {getHeadingDirection(heading)}
                       </span>
                     </div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-[11px] rounded-lg bg-slate-50/80 dark:bg-slate-700/30 px-2 py-1 text-slate-400">
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3 text-emerald-500" />
+                      <span>{formatRelativeTime(device.lastSeen)}</span>
+                    </span>
+                    <span className="font-mono text-[10px]">{formatTimeSafe(device.lastSeen, 'HH:mm:ss')}</span>
                   </div>
                 </div>
 

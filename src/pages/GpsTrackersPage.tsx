@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useGpsDevices } from '@/hooks/useGpsDevices'
 import type { GpsDevice } from '@/types/gps'
@@ -18,8 +18,9 @@ import {
   Plus,
   Trash2,
   Cpu,
+  Clock,
 } from 'lucide-react'
-import { getHeadingDirection, formatTimeSafe } from '@/utils/helpers'
+import { getHeadingDirection, formatTimeSafe, formatRelativeTime } from '@/utils/helpers'
 
 type FilterType = 'all' | 'moving' | 'stationary' | 'online' | 'lowBattery'
 
@@ -32,6 +33,13 @@ export default function GpsTrackersPage() {
   const [view, setView] = useState<'grid' | 'list'>('grid')
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [, setTick] = useState(0)
+
+  // Auto-tick every 5 seconds to keep relative time fresh ("Just now", "5s ago", etc.)
+  useEffect(() => {
+    const timer = setInterval(() => setTick((t) => t + 1), 5000)
+    return () => clearInterval(timer)
+  }, [])
 
   const filtered = useMemo(() => {
     return devices.filter((d) => {
@@ -247,6 +255,20 @@ export default function GpsTrackersPage() {
                       <span className="font-medium text-slate-400">Carrier:</span> {d.cellular.operator || 'Cellular'} ({d.cellular.networkType || 'LTE'})
                     </p>
                   </div>
+
+                  {/* Live Timestamp & Last Packet */}
+                  <div className="mt-3 flex items-center justify-between text-[11px] rounded-lg bg-slate-50/80 dark:bg-slate-800/60 px-2.5 py-1.5 border border-slate-200/60 dark:border-slate-700/60">
+                    <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+                      <Clock className="h-3 w-3 text-emerald-500" />
+                      <span>Last Seen:</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        {formatRelativeTime(d.lastSeen)}
+                      </span>
+                    </div>
+                    <span className="font-mono text-[10px] text-slate-400">
+                      {formatTimeSafe(d.lastSeen, 'HH:mm:ss')}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
@@ -324,8 +346,13 @@ export default function GpsTrackersPage() {
                         showText
                       />
                     </td>
-                    <td className="px-4 py-3 text-slate-400">
-                      {formatTimeSafe(d.lastSeen, 'MMM dd, HH:mm')}
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-slate-800 dark:text-slate-200">
+                        {formatRelativeTime(d.lastSeen)}
+                      </p>
+                      <p className="font-mono text-[10px] text-slate-400">
+                        {formatTimeSafe(d.lastSeen, 'yyyy-MM-dd HH:mm:ss')}
+                      </p>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button

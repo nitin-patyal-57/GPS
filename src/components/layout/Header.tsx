@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Menu, RefreshCw, Sun, Moon, Search, Wifi, Plus } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Menu, RefreshCw, Sun, Moon, Search, Wifi, Plus, Clock } from 'lucide-react'
 import { useTheme } from '@/context/ThemeContext'
 import { useRefresh } from '@/context/RefreshContext'
 import { useNavigate } from 'react-router-dom'
@@ -16,7 +16,15 @@ export function Header({ onToggleSidebar }: HeaderProps) {
   const { addDevice } = useGpsDevices()
   const [search, setSearch] = useState('')
   const [isAddOpen, setIsAddOpen] = useState(false)
+  const [now, setNow] = useState(new Date())
   const navigate = useNavigate()
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(new Date())
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -57,6 +65,12 @@ export function Header({ onToggleSidebar }: HeaderProps) {
             <Plus className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Add Tracker</span>
           </button>
+
+          {/* Live Clock Badge */}
+          <div className="hidden sm:flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-slate-800 px-3 py-1 text-xs font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+            <Clock className="h-3 w-3 text-emerald-500 animate-pulse" />
+            <span className="font-mono text-[11px] font-semibold">{now.toLocaleTimeString()}</span>
+          </div>
 
           {/* Live MQTT status badge */}
           <div className="hidden md:flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">

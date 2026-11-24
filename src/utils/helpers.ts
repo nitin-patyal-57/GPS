@@ -6,10 +6,34 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function formatTimeSafe(val: string | undefined | null, pattern = 'yyyy-MM-dd HH:mm:ss', fallback = 'N/A'): string {
-  if (!val) return fallback
-  const d = new Date(val)
-  if (!isValid(d)) return fallback
+export function parseDateSafe(val: string | number | undefined | null): Date | null {
+  if (!val) return null
+  if (typeof val === 'number') {
+    const d = new Date(val)
+    return isValid(d) ? d : null
+  }
+  const str = String(val).trim()
+  if (!str) return null
+
+  // Epoch ms or seconds string
+  if (/^\d+$/.test(str)) {
+    const num = Number(str)
+    const ms = str.length === 10 ? num * 1000 : num
+    const d = new Date(ms)
+    return isValid(d) ? d : null
+  }
+
+  const d = new Date(str)
+  return isValid(d) ? d : null
+}
+
+export function formatTimeSafe(
+  val: string | number | undefined | null,
+  pattern = 'yyyy-MM-dd HH:mm:ss',
+  fallback = 'N/A'
+): string {
+  const d = parseDateSafe(val)
+  if (!d) return fallback
   try {
     return format(d, pattern)
   } catch {
@@ -17,11 +41,16 @@ export function formatTimeSafe(val: string | undefined | null, pattern = 'yyyy-M
   }
 }
 
-export function formatRelativeTime(val: string | undefined | null, fallback = 'Never'): string {
-  if (!val) return fallback
-  const d = new Date(val)
-  if (!isValid(d)) return fallback
+export function formatRelativeTime(
+  val: string | number | undefined | null,
+  fallback = 'Never'
+): string {
+  const d = parseDateSafe(val)
+  if (!d) return fallback
   try {
+    const diffSec = Math.floor((Date.now() - d.getTime()) / 1000)
+    if (diffSec < 10 && diffSec >= -120) return 'Just now'
+    if (diffSec < 60 && diffSec >= 10) return `${diffSec}s ago`
     return formatDistanceToNow(d, { addSuffix: true })
   } catch {
     return fallback
