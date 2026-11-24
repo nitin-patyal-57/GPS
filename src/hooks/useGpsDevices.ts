@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { GpsDevice, GpsAlert, LocationHistoryEntry } from '@/types/gps'
-import { gpsService, DEMO_DEVICE_IDS, getDeletedDeviceIds } from '@/services/gpsService'
+import {
+  gpsService,
+  isIgnoredDevice,
+  getDeletedDeviceIds,
+  getCustomDevicesFromStorage,
+} from '@/services/gpsService'
 import { realtimeGpsService } from '@/services/websocket'
 import { useRefresh } from '@/context/RefreshContext'
 
@@ -15,7 +20,7 @@ export function useGpsDevices() {
       const data = await gpsService.getDevices()
       const deleted = getDeletedDeviceIds()
       const clean = data.filter(
-        (d) => d && d.deviceId && !DEMO_DEVICE_IDS.has(d.deviceId) && !deleted.has(d.deviceId)
+        (d) => d && d.deviceId && !isIgnoredDevice(d.deviceId) && !deleted.has(d.deviceId)
       )
       setDevices(clean)
       setError(null)
@@ -34,14 +39,14 @@ export function useGpsDevices() {
   useEffect(() => {
     const unsubscribe = realtimeGpsService.subscribeToDeviceUpdates((deviceId, updatedDevice) => {
       // Strictly ignore decommissioned demo devices and user-deleted devices
-      if (!deviceId || DEMO_DEVICE_IDS.has(deviceId)) return
+      if (!deviceId || isIgnoredDevice(deviceId)) return
       const deleted = getDeletedDeviceIds()
       if (deleted.has(deviceId)) return
 
       setDevices((prev) => {
-        // Strip out any stale demo devices or deleted items
+        // Strip out any ignored/soundbox devices or deleted items
         const cleanPrev = prev.filter(
-          (d) => d && d.deviceId && !DEMO_DEVICE_IDS.has(d.deviceId) && !deleted.has(d.deviceId)
+          (d) => d && d.deviceId && !isIgnoredDevice(d.deviceId) && !deleted.has(d.deviceId)
         )
         const index = cleanPrev.findIndex((d) => d.deviceId === deviceId)
         if (index >= 0) {
@@ -49,7 +54,16 @@ export function useGpsDevices() {
           next[index] = { ...next[index], ...updatedDevice }
           return next
         }
-        return [updatedDevice, ...cleanPrev]
+
+        // Only auto-add if it was explicitly registered in custom storage or is the primary baseline device
+        const custom = getCustomDevicesFromStorage()
+        const isRegistered = custom.some((c) => c.deviceId === deviceId) || deviceId === '861185084122719'
+        if (isRegistered) {
+          return [updatedDevice, ...cleanPrev]
+        }
+
+        // Otherwise drop the unsolicited soundbox packet
+        return cleanPrev
       })
     })
 
@@ -62,7 +76,7 @@ export function useGpsDevices() {
       setDevices((prev) => {
         const deleted = getDeletedDeviceIds()
         const cleanPrev = prev.filter(
-          (d) => d && d.deviceId && !DEMO_DEVICE_IDS.has(d.deviceId) && !deleted.has(d.deviceId)
+          (d) => d && d.deviceId && !isIgnoredDevice(d.deviceId) && !deleted.has(d.deviceId)
         )
         const existing = cleanPrev.findIndex((d) => d.deviceId === newDev.deviceId)
         if (existing >= 0) {
@@ -93,7 +107,7 @@ export function useGpsDevice(deviceId: string) {
   const { refreshCount } = useRefresh()
 
   const fetchDevice = useCallback(async () => {
-    if (!deviceId || DEMO_DEVICE_IDS.has(deviceId) || getDeletedDeviceIds().has(deviceId)) {
+    if (!deviceId || isIgnoredDevice(deviceId) || getDeletedDeviceIds().has(deviceId)) {
       setDevice(null)
       setError(`Device ${deviceId} not found`)
       setLoading(false)
@@ -102,7 +116,7 @@ export function useGpsDevice(deviceId: string) {
 
     try {
       const data = await gpsService.getDeviceById(deviceId)
-      if (data && !DEMO_DEVICE_IDS.has(data.deviceId)) {
+      if (data && !isIgnoredDevice(data.deviceId)) {
         setDevice(data)
         setError(null)
       } else {
@@ -121,7 +135,7 @@ export function useGpsDevice(deviceId: string) {
 
   // Real-time device update
   useEffect(() => {
-    if (!deviceId || DEMO_DEVICE_IDS.has(deviceId)) return
+    if (!deviceId || isIgnoredDevice(deviceId)) return
     const unsubscribe = realtimeGpsService.subscribeToDeviceUpdates((id, updatedDevice) => {
       if (id === deviceId && !getDeletedDeviceIds().has(id)) {
         setDevice((prev) => (prev ? { ...prev, ...updatedDevice } : updatedDevice))
@@ -139,7 +153,7 @@ export function useLocationHistory(deviceId: string, from?: string, to?: string)
   const [error, setError] = useState<string | null>(null)
 
   const fetchHistory = useCallback(async () => {
-    if (!deviceId || DEMO_DEVICE_IDS.has(deviceId) || getDeletedDeviceIds().has(deviceId)) {
+    if (!deviceId || isIgnoredDevice(deviceId) || getDeletedDeviceIds().has(deviceId)) {
       setHistory([])
       return
     }
@@ -172,7 +186,7 @@ export function useGpsAlerts() {
     try {
       const data = await gpsService.getAlerts()
       const deleted = getDeletedDeviceIds()
-      setAlerts(data.filter((a) => !DEMO_DEVICE_IDS.has(a.deviceId) && !deleted.has(a.deviceId)))
+      setAlerts(data.filter((a) => !isIgnoredDevice(a.deviceId) && !deleted.has(a.deviceId)))
       setError(null)
     } catch (err: any) {
       setError(err.message || 'Failed to load alerts')
@@ -187,7 +201,7 @@ export function useGpsAlerts() {
 
   useEffect(() => {
     const unsubscribe = realtimeGpsService.subscribeToAlerts((alert) => {
-      if (DEMO_DEVICE_IDS.has(alert.deviceId) || getDeletedDeviceIds().has(alert.deviceId)) return
+      if (isIgnoredDevice(alert.deviceId) || getDeletedDeviceIds().has(alert.deviceId)) return
       setAlerts((prev) => [alert, ...prev.filter((a) => a.id !== alert.id)])
     })
     return () => unsubscribe()

@@ -133,10 +133,18 @@ function handleMqttMessage(topic: string, messageBuffer: Buffer) {
     const metricsMatch = topic.match(/^soundbox_dev\/([^/]+)\/metrics$/)
     if (metricsMatch) {
       const imei = metricsMatch[1]
-      // Ignore known stale demo devices
-      if (imei === '867509082945058' || imei === '861185084200101') {
+      // Ignore known stale soundbox/demo devices
+      if (imei.startsWith('86750908') || imei === '867509082945058' || imei === '861185084200101') {
         return
       }
+
+      // Whitelist check: only accept telemetry for devices registered in the database or baseline device
+      const existing = db.prepare('SELECT deviceId FROM devices WHERE deviceId = ?').get(imei)
+      if (!existing && imei !== '861185084122719') {
+        // Do not auto-register unknown soundbox devices on shared MQTT broker
+        return
+      }
+
       try {
         const json = JSON.parse(rawPayload)
         const deviceData = parseGpsMetrics(json, imei, now)
@@ -198,10 +206,10 @@ function handleMqttMessage(topic: string, messageBuffer: Buffer) {
 function seedBaselineDevice() {
   try {
     const db = getDb()
-    // Remove stale demo devices
+    // Remove stale demo and soundbox devices
     try {
-      db.prepare("DELETE FROM devices WHERE deviceId IN ('867509082945058', '861185084200101')").run()
-      db.prepare("DELETE FROM device_history WHERE deviceId IN ('867509082945058', '861185084200101')").run()
+      db.prepare("DELETE FROM devices WHERE deviceId LIKE '86750908%'").run()
+      db.prepare("DELETE FROM device_history WHERE deviceId LIKE '86750908%'").run()
     } catch {}
 
     const imei = '861185084122719'

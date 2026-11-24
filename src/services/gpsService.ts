@@ -6,15 +6,25 @@ export const DEMO_DEVICE_IDS = new Set(['867509082945058', '861185084200101'])
 const STORAGE_CUSTOM_KEY = 'custom_gps_devices'
 const STORAGE_DELETED_KEY = 'deleted_gps_devices'
 
+export function isIgnoredDevice(id: string): boolean {
+  if (!id) return true
+  const clean = id.trim()
+  // Block all demo walnut/soundbox IMEI series (86750908...)
+  if (clean.startsWith('86750908') || clean === '861185084200101' || DEMO_DEVICE_IDS.has(clean)) {
+    return true
+  }
+  return false
+}
+
 export function getDeletedDeviceIds(): Set<string> {
   try {
     const raw = localStorage.getItem(STORAGE_DELETED_KEY)
     if (raw) {
       const arr = JSON.parse(raw)
-      return new Set([...arr, ...Array.from(DEMO_DEVICE_IDS)])
+      return new Set([...arr])
     }
   } catch {}
-  return new Set(DEMO_DEVICE_IDS)
+  return new Set()
 }
 
 export function markDeviceDeleted(deviceId: string) {
@@ -37,7 +47,7 @@ export function getCustomDevicesFromStorage(): GpsDevice[] {
       const parsed = JSON.parse(raw)
       if (Array.isArray(parsed)) {
         const deleted = getDeletedDeviceIds()
-        return parsed.filter((d) => d && d.deviceId && !DEMO_DEVICE_IDS.has(d.deviceId) && !deleted.has(d.deviceId))
+        return parsed.filter((d) => d && d.deviceId && !isIgnoredDevice(d.deviceId) && !deleted.has(d.deviceId))
       }
     }
   } catch {}
@@ -46,7 +56,7 @@ export function getCustomDevicesFromStorage(): GpsDevice[] {
 
 export function saveCustomDeviceToStorage(device: GpsDevice) {
   try {
-    if (DEMO_DEVICE_IDS.has(device.deviceId)) return
+    if (isIgnoredDevice(device.deviceId)) return
 
     const current = getCustomDevicesFromStorage().filter((d) => d.deviceId !== device.deviceId)
     current.unshift(device)
@@ -62,6 +72,7 @@ export function saveCustomDeviceToStorage(device: GpsDevice) {
 }
 
 export const gpsService = {
+  isIgnoredDevice,
   getDeletedDeviceIds,
   markDeviceDeleted,
 
@@ -84,7 +95,7 @@ export const gpsService = {
         const data = await res.json()
         if (Array.isArray(data)) {
           serverDevices = data.filter(
-            (d) => d && d.deviceId && !DEMO_DEVICE_IDS.has(d.deviceId) && !deleted.has(d.deviceId)
+            (d) => d && d.deviceId && !isIgnoredDevice(d.deviceId) && !deleted.has(d.deviceId)
           )
         }
       }
@@ -101,13 +112,13 @@ export const gpsService = {
     }
 
     for (const d of serverDevices) {
-      if (!DEMO_DEVICE_IDS.has(d.deviceId) && !deleted.has(d.deviceId)) {
+      if (!isIgnoredDevice(d.deviceId) && !deleted.has(d.deviceId)) {
         deviceMap.set(d.deviceId, d)
       }
     }
 
     for (const d of customDevices) {
-      if (!DEMO_DEVICE_IDS.has(d.deviceId) && !deleted.has(d.deviceId) && !deviceMap.has(d.deviceId)) {
+      if (!isIgnoredDevice(d.deviceId) && !deleted.has(d.deviceId) && !deviceMap.has(d.deviceId)) {
         deviceMap.set(d.deviceId, d)
       }
     }
@@ -116,7 +127,7 @@ export const gpsService = {
   },
 
   async getDeviceById(id: string): Promise<GpsDevice | undefined> {
-    if (DEMO_DEVICE_IDS.has(id)) return undefined
+    if (isIgnoredDevice(id)) return undefined
     const deleted = getDeletedDeviceIds()
     if (deleted.has(id)) return undefined
 
@@ -132,7 +143,7 @@ export const gpsService = {
       })
       if (res.ok) {
         const device = await res.json()
-        if (device && device.deviceId && !DEMO_DEVICE_IDS.has(device.deviceId) && !deleted.has(device.deviceId)) {
+        if (device && device.deviceId && !isIgnoredDevice(device.deviceId) && !deleted.has(device.deviceId)) {
           return device
         }
       }
@@ -142,7 +153,7 @@ export const gpsService = {
 
     const custom = getCustomDevicesFromStorage()
     const matched = custom.find((d) => d.deviceId === id)
-    if (matched && !DEMO_DEVICE_IDS.has(matched.deviceId) && !deleted.has(matched.deviceId)) {
+    if (matched && !isIgnoredDevice(matched.deviceId) && !deleted.has(matched.deviceId)) {
       return matched
     }
 
@@ -155,7 +166,7 @@ export const gpsService = {
 
   async addDevice(params: { imei: string; deviceName?: string; modelId?: string }): Promise<GpsDevice> {
     const cleanImei = params.imei.trim()
-    if (DEMO_DEVICE_IDS.has(cleanImei)) {
+    if (isIgnoredDevice(cleanImei)) {
       throw new Error('This demo IMEI has been decommissioned.')
     }
 
@@ -282,7 +293,7 @@ export const gpsService = {
   },
 
   async getLocationHistory(deviceId: string, from?: string, to?: string): Promise<LocationHistoryEntry[]> {
-    if (DEMO_DEVICE_IDS.has(deviceId)) return []
+    if (isIgnoredDevice(deviceId)) return []
     const deleted = getDeletedDeviceIds()
     if (deleted.has(deviceId)) return []
 
@@ -353,7 +364,7 @@ export const gpsService = {
       if (res.ok) {
         const alerts: GpsAlert[] = await res.json()
         if (Array.isArray(alerts)) {
-          return alerts.filter((a) => !DEMO_DEVICE_IDS.has(a.deviceId) && !deleted.has(a.deviceId))
+          return alerts.filter((a) => !isIgnoredDevice(a.deviceId) && !deleted.has(a.deviceId))
         }
       }
     } catch {
@@ -381,7 +392,7 @@ export const gpsService = {
       },
     ]
 
-    return fallbackAlerts.filter((a) => !DEMO_DEVICE_IDS.has(a.deviceId) && !deleted.has(a.deviceId))
+    return fallbackAlerts.filter((a) => !isIgnoredDevice(a.deviceId) && !deleted.has(a.deviceId))
   },
 
   async acknowledgeAlert(alertId: string): Promise<boolean> {

@@ -4,11 +4,16 @@ import { publishLedCommand, publishStatusCommand } from '../services/mqttService
 
 const router = Router()
 
-const DEMO_DEVICE_IDS = new Set(['867509082945058', '861185084200101'])
+const isDemoOrSoundbox = (id: string) => {
+  if (!id) return true
+  const clean = id.trim()
+  return clean.startsWith('86750908') || clean === '861185084200101' || clean === '867509082945058'
+}
 
-// GET /api/devices - Get all devices (filters out stale demo devices)
+// GET /api/devices - Get all devices (filters out stale soundbox/demo devices)
 router.get('/devices', (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
     const db = getDb()
     const rows = db.prepare('SELECT * FROM devices ORDER BY updatedAt DESC').all() as any[]
     const devices = rows
@@ -19,7 +24,7 @@ router.get('/devices', (req, res) => {
           return null
         }
       })
-      .filter((d) => d && !DEMO_DEVICE_IDS.has(d.deviceId))
+      .filter((d) => d && !isDemoOrSoundbox(d.deviceId))
     res.json(devices)
   } catch (err: any) {
     res.status(500).json({ error: err.message })
@@ -35,8 +40,8 @@ router.post('/devices', (req, res) => {
     }
 
     const cleanImei = imei.trim()
-    if (DEMO_DEVICE_IDS.has(cleanImei)) {
-      return res.status(400).json({ error: 'Cannot register demo IMEI' })
+    if (isDemoOrSoundbox(cleanImei)) {
+      return res.status(400).json({ error: 'Cannot register demo/soundbox IMEI' })
     }
 
     const now = new Date().toISOString()
@@ -133,7 +138,8 @@ router.post('/devices', (req, res) => {
 // GET /api/devices/:id
 router.get('/devices/:id', (req, res) => {
   try {
-    if (DEMO_DEVICE_IDS.has(req.params.id)) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+    if (isDemoOrSoundbox(req.params.id)) {
       return res.status(404).json({ error: 'Device not found' })
     }
     const db = getDb()

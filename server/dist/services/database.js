@@ -9,6 +9,12 @@ exports.initDatabase = initDatabase;
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const DEMO_DEVICE_IDS = new Set(['867509082945058', '861185084200101']);
+function isIgnoredId(id) {
+    if (!id)
+        return true;
+    const clean = id.trim();
+    return clean.startsWith('86750908') || clean === '861185084200101' || DEMO_DEVICE_IDS.has(clean);
+}
 class GpsStore {
     devices = new Map();
     history = [];
@@ -28,16 +34,16 @@ class GpsStore {
             const parsed = JSON.parse(content);
             if (Array.isArray(parsed.devices)) {
                 for (const d of parsed.devices) {
-                    if (d.deviceId && !DEMO_DEVICE_IDS.has(d.deviceId)) {
+                    if (d.deviceId && !isIgnoredId(d.deviceId)) {
                         this.devices.set(d.deviceId, d);
                     }
                 }
             }
             if (Array.isArray(parsed.history)) {
-                this.history = parsed.history.filter((h) => !DEMO_DEVICE_IDS.has(h.deviceId));
+                this.history = parsed.history.filter((h) => !isIgnoredId(h.deviceId));
             }
             if (Array.isArray(parsed.alerts)) {
-                this.alerts = parsed.alerts.filter((a) => !DEMO_DEVICE_IDS.has(a.deviceId));
+                this.alerts = parsed.alerts.filter((a) => !isIgnoredId(a.deviceId));
             }
             console.log(`[Database] Loaded ${this.devices.size} devices and ${this.history.length} telemetry points from ${this.filePath}`);
         }
@@ -54,9 +60,9 @@ class GpsStore {
                 fs_1.default.mkdirSync(dir, { recursive: true });
             }
             const data = {
-                devices: Array.from(this.devices.values()),
-                history: this.history.slice(-2000), // Keep recent history
-                alerts: this.alerts.slice(-200),
+                devices: Array.from(this.devices.values()).filter((d) => !isIgnoredId(d.deviceId)),
+                history: this.history.filter((h) => !isIgnoredId(h.deviceId)).slice(-2000),
+                alerts: this.alerts.filter((a) => !isIgnoredId(a.deviceId)).slice(-200),
             };
             fs_1.default.writeFileSync(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
         }
@@ -73,7 +79,7 @@ class GpsStore {
             return {
                 run: (...params) => {
                     const [deviceId, deviceName, status, lastSeen, data, updatedAt] = params;
-                    if (!DEMO_DEVICE_IDS.has(deviceId)) {
+                    if (!isIgnoredId(deviceId)) {
                         this.devices.set(deviceId, { deviceId, deviceName, status, lastSeen, data, updatedAt });
                         this.saveToFile();
                     }
@@ -86,7 +92,7 @@ class GpsStore {
             return {
                 run: (...params) => {
                     const [deviceId, latitude, longitude, altitude, speed, heading, accuracy, satellites, batteryPercentage, batteryVoltage, signalQuality, rssi, timestamp,] = params;
-                    if (!DEMO_DEVICE_IDS.has(deviceId)) {
+                    if (!isIgnoredId(deviceId)) {
                         this.history.push({
                             id: this.history.length + 1,
                             deviceId,
@@ -103,7 +109,6 @@ class GpsStore {
                             rssi: Number(rssi) || 0,
                             timestamp: String(timestamp),
                         });
-                        // Cap history in memory
                         if (this.history.length > 5000) {
                             this.history = this.history.slice(-3000);
                         }
@@ -118,7 +123,7 @@ class GpsStore {
             return {
                 run: (...params) => {
                     const [id, deviceId, type, message, severity, timestamp, acknowledged] = params;
-                    if (!DEMO_DEVICE_IDS.has(deviceId)) {
+                    if (!isIgnoredId(deviceId)) {
                         this.alerts.push({
                             id,
                             deviceId,
@@ -138,7 +143,7 @@ class GpsStore {
         if (s.startsWith('select * from devices where deviceid =')) {
             return {
                 get: (deviceId) => {
-                    if (DEMO_DEVICE_IDS.has(deviceId))
+                    if (isIgnoredId(deviceId))
                         return null;
                     return this.devices.get(deviceId) || null;
                 },
@@ -149,7 +154,7 @@ class GpsStore {
             return {
                 all: () => {
                     return Array.from(this.devices.values())
-                        .filter((d) => !DEMO_DEVICE_IDS.has(d.deviceId))
+                        .filter((d) => !isIgnoredId(d.deviceId))
                         .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
                 },
             };
@@ -158,8 +163,12 @@ class GpsStore {
         if (s.startsWith('delete from devices')) {
             return {
                 run: (...params) => {
-                    if (s.includes('where deviceid in')) {
-                        DEMO_DEVICE_IDS.forEach((id) => this.devices.delete(id));
+                    if (s.includes('like') || s.includes('where deviceid in')) {
+                        for (const key of Array.from(this.devices.keys())) {
+                            if (isIgnoredId(key)) {
+                                this.devices.delete(key);
+                            }
+                        }
                     }
                     else if (params[0]) {
                         this.devices.delete(params[0]);
@@ -173,8 +182,8 @@ class GpsStore {
         if (s.startsWith('delete from device_history')) {
             return {
                 run: (...params) => {
-                    if (s.includes('where deviceid in')) {
-                        this.history = this.history.filter((h) => !DEMO_DEVICE_IDS.has(h.deviceId));
+                    if (s.includes('like') || s.includes('where deviceid in')) {
+                        this.history = this.history.filter((h) => !isIgnoredId(h.deviceId));
                     }
                     else if (params[0]) {
                         this.history = this.history.filter((h) => h.deviceId !== params[0]);
@@ -189,7 +198,7 @@ class GpsStore {
             return {
                 all: (...params) => {
                     const deviceId = params[0];
-                    if (!deviceId || DEMO_DEVICE_IDS.has(deviceId))
+                    if (!deviceId || isIgnoredId(deviceId))
                         return [];
                     return this.history
                         .filter((h) => h.deviceId === deviceId)
@@ -203,7 +212,7 @@ class GpsStore {
             return {
                 all: () => {
                     return [...this.alerts]
-                        .filter((a) => !DEMO_DEVICE_IDS.has(a.deviceId))
+                        .filter((a) => !isIgnoredId(a.deviceId))
                         .reverse()
                         .slice(0, 50);
                 },
