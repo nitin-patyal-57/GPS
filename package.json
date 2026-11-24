@@ -3,11 +3,13 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "vite",
-    "build:frontend": "tsc -b && vite build",
-    "build:server": "cd server && npm install && npm run build",
-    "build": "npm run build:frontend && npm run build:server",
+    "build": "tsc -b && vite build",
+    "build:server": "cd server && npm run build",
     "start": "node server/dist/index.js",
     "preview": "vite preview"
   },
