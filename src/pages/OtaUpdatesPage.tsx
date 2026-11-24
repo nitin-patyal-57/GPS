@@ -86,9 +86,10 @@ export default function OtaUpdatesPage() {
         setOtaJobs((prev) => {
           const next = [...prev]
           for (let i = 0; i < next.length; i++) {
-            const matchJob = !ackJobId || next[i].jobId === ackJobId
-            const matchDevice = !ackImei || next[i].deviceId === ackImei
-            if (matchJob && matchDevice) {
+            // Strictly match the target device IMEI and Job ID
+            const sameDevice = ackImei ? next[i].deviceId === ackImei : false
+            const sameJob = ackJobId ? next[i].jobId === ackJobId : true
+            if (sameDevice && sameJob) {
               next[i] = {
                 ...next[i],
                 status: 'acknowledged',

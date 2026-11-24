@@ -136,9 +136,9 @@ export class GpsStore {
     const ackPayloadStr = typeof ackData === 'string' ? ackData : JSON.stringify(ackData || {})
     let updated = false
     for (const job of this.otaJobs) {
-      const matchJob = !jobId || job.jobId === jobId
-      const matchDevice = !deviceId || job.deviceId === deviceId
-      if (matchJob && matchDevice) {
+      const matchDevice = deviceId ? job.deviceId === deviceId : false
+      const matchJob = jobId ? job.jobId === jobId : true
+      if (matchDevice && matchJob) {
         job.status = 'acknowledged'
         job.ackedAt = now
         job.ackPayload = ackPayloadStr

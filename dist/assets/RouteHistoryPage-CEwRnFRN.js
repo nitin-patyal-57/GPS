@@ -1,4 +1,4 @@
-import{C as e,b as t,c as n,d as r,i,r as a,y as o}from"./useGpsDevices-DDMsM2aB.js";import{a as s,n as c,o as l,s as u,t as d,u as f}from"./MapLayerSwitcher-DDMsKv7l.js";import{t as p}from"./Polyline-DsV1i8tC.js";import{f as m,m as h,o as g,r as _,t as v,u as y}from"./index-BQjT8swu.js";import{t as b}from"./gauge-CX_I_UKw.js";var x=e(t(),1),S=f(),C=o();function w(e,t){return(0,S.divIcon)({className:``,html:`
+import{C as e,b as t,c as n,d as r,i,r as a,y as o}from"./useGpsDevices-DDMsM2aB.js";import{a as s,n as c,o as l,s as u,t as d,u as f}from"./MapLayerSwitcher-5nAWuk1i.js";import{t as p}from"./Polyline-BkS9MYXc.js";import{f as m,m as h,o as g,r as _,t as v,u as y}from"./index-DsnEaQZG.js";import{t as b}from"./gauge-CX_I_UKw.js";var x=e(t(),1),S=f(),C=o();function w(e,t){return(0,S.divIcon)({className:``,html:`
       <div style="width:28px;height:28px;border-radius:50%;background:${t};color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;border:2.5px solid white;box-shadow:0 3px 8px rgba(0,0,0,0.35);">
         ${e}
       </div>
