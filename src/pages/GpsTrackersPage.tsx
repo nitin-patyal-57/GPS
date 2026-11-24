@@ -9,28 +9,29 @@ import SignalIndicator from '@/components/ui/SignalIndicator'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import ErrorState from '@/components/ui/ErrorState'
 import EmptyState from '@/components/ui/EmptyState'
+import AddDeviceModal from '@/components/devices/AddDeviceModal'
 import {
   Search,
   LayoutGrid,
   List,
-  Navigation,
-  Compass,
-  Satellite,
-  Gauge,
-  Activity,
   SlidersHorizontal,
+  Plus,
+  Trash2,
+  Cpu,
 } from 'lucide-react'
 import { getHeadingDirection, formatTimeSafe } from '@/utils/helpers'
 
 type FilterType = 'all' | 'moving' | 'stationary' | 'online' | 'lowBattery'
 
 export default function GpsTrackersPage() {
-  const { devices, loading, error, refetch } = useGpsDevices()
+  const { devices, loading, error, refetch, addDevice, deleteDevice } = useGpsDevices()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [search, setSearch] = useState(() => searchParams.get('search') || '')
   const [filter, setFilter] = useState<FilterType>('all')
   const [view, setView] = useState<'grid' | 'list'>('grid')
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const filtered = useMemo(() => {
     return devices.filter((d) => {
@@ -55,6 +56,21 @@ export default function GpsTrackersPage() {
     })
   }, [devices, search, filter])
 
+  const handleDelete = async (e: React.MouseEvent, device: GpsDevice) => {
+    e.stopPropagation()
+    const confirmDelete = window.confirm(
+      `Remove tracker "${device.deviceName}" (IMEI: ${device.deviceId}) from the dashboard?`
+    )
+    if (!confirmDelete) return
+
+    setDeletingId(device.deviceId)
+    try {
+      await deleteDevice(device.deviceId)
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   if (loading) return <LoadingSpinner message="Loading GPS trackers..." className="min-h-[60vh]" />
   if (error) return <ErrorState message={error} onRetry={refetch} />
 
@@ -77,27 +93,40 @@ export default function GpsTrackersPage() {
             {filtered.length} active tracker device{filtered.length !== 1 ? 's' : ''} in fleet
           </p>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-2.5">
           <button
-            onClick={() => setView('grid')}
-            className={`rounded-lg p-2 transition ${
-              view === 'grid'
-                ? 'bg-emerald-500/20 text-emerald-500 dark:bg-emerald-500/20 dark:text-emerald-400'
-                : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
+            onClick={() => setIsAddModalOpen(true)}
+            className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-500 transition"
           >
-            <LayoutGrid className="h-5 w-5" />
+            <Plus className="h-4 w-4" />
+            <span>Add Tracker</span>
           </button>
-          <button
-            onClick={() => setView('list')}
-            className={`rounded-lg p-2 transition ${
-              view === 'list'
-                ? 'bg-emerald-500/20 text-emerald-500 dark:bg-emerald-500/20 dark:text-emerald-400'
-                : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <List className="h-5 w-5" />
-          </button>
+
+          <div className="flex items-center gap-1 border-l border-slate-200 dark:border-slate-800 pl-2.5">
+            <button
+              onClick={() => setView('grid')}
+              title="Grid View"
+              className={`rounded-lg p-2 transition ${
+                view === 'grid'
+                  ? 'bg-emerald-500/20 text-emerald-500 dark:bg-emerald-500/20 dark:text-emerald-400'
+                  : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <LayoutGrid className="h-5 w-5" />
+            </button>
+            <button
+              onClick={() => setView('list')}
+              title="List View"
+              className={`rounded-lg p-2 transition ${
+                view === 'list'
+                  ? 'bg-emerald-500/20 text-emerald-500 dark:bg-emerald-500/20 dark:text-emerald-400'
+                  : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <List className="h-5 w-5" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -135,7 +164,16 @@ export default function GpsTrackersPage() {
         <EmptyState
           icon={<SlidersHorizontal className="h-10 w-10 text-slate-400" />}
           title="No Trackers Found"
-          description="No GPS devices matched your search or filter criteria."
+          description="No GPS devices matched your search or filter criteria. You can register a new tracker anytime."
+          action={
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="mt-3 flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-500 transition"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Register New Tracker</span>
+            </button>
+          }
         />
       ) : view === 'grid' ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -150,11 +188,11 @@ export default function GpsTrackersPage() {
                 hover
                 padding="md"
                 onClick={() => navigate(`/devices/${d.deviceId}`)}
-                className="flex flex-col justify-between"
+                className="flex flex-col justify-between relative group cursor-pointer"
               >
                 <div>
                   <div className="flex items-start justify-between gap-2">
-                    <div>
+                    <div className="pr-6">
                       <p className="font-bold text-slate-900 dark:text-slate-100 text-sm">
                         {d.deviceName}
                       </p>
@@ -162,11 +200,22 @@ export default function GpsTrackersPage() {
                         IMEI: {d.deviceId}
                       </p>
                     </div>
-                    <StatusBadge
-                      label={isMoving ? 'Moving' : 'Parked'}
-                      variant={isMoving ? 'success' : 'info'}
-                      pulse={isMoving}
-                    />
+
+                    <div className="flex items-center gap-1.5">
+                      <StatusBadge
+                        label={isMoving ? 'Moving' : 'Parked'}
+                        variant={isMoving ? 'success' : 'info'}
+                        pulse={isMoving}
+                      />
+                      <button
+                        onClick={(e) => handleDelete(e, d)}
+                        disabled={deletingId === d.deviceId}
+                        title="Remove tracker"
+                        className="rounded-md p-1.5 text-slate-400 opacity-60 hover:opacity-100 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 transition"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="mt-4 grid grid-cols-3 gap-2 text-center">
@@ -195,7 +244,7 @@ export default function GpsTrackersPage() {
                       <span className="font-medium text-slate-400">Coords:</span> {d.gps?.latitude?.toFixed(5)}, {d.gps?.longitude?.toFixed(5)}
                     </p>
                     <p className="truncate">
-                      <span className="font-medium text-slate-400">Carrier:</span> {d.cellular.operator} ({d.cellular.networkType})
+                      <span className="font-medium text-slate-400">Carrier:</span> {d.cellular.operator || 'Cellular'} ({d.cellular.networkType || 'LTE'})
                     </p>
                   </div>
                 </div>
@@ -233,6 +282,7 @@ export default function GpsTrackersPage() {
                   <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">Battery</th>
                   <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">Network</th>
                   <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">Last Seen</th>
+                  <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -277,6 +327,16 @@ export default function GpsTrackersPage() {
                     <td className="px-4 py-3 text-slate-400">
                       {formatTimeSafe(d.lastSeen, 'MMM dd, HH:mm')}
                     </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={(e) => handleDelete(e, d)}
+                        disabled={deletingId === d.deviceId}
+                        title="Remove tracker"
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 transition"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -284,6 +344,16 @@ export default function GpsTrackersPage() {
           </div>
         </Card>
       )}
+
+      {/* Add Device Modal */}
+      <AddDeviceModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        onDeviceAdded={(dev) => {
+          navigate(`/devices/${dev.deviceId}`)
+        }}
+        addDeviceFn={addDevice}
+      />
     </div>
   )
 }

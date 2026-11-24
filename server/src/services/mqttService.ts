@@ -133,6 +133,10 @@ function handleMqttMessage(topic: string, messageBuffer: Buffer) {
     const metricsMatch = topic.match(/^soundbox_dev\/([^/]+)\/metrics$/)
     if (metricsMatch) {
       const imei = metricsMatch[1]
+      // Ignore known stale demo devices
+      if (imei === '867509082945058' || imei === '861185084200101') {
+        return
+      }
       try {
         const json = JSON.parse(rawPayload)
         const deviceData = parseGpsMetrics(json, imei, now)
@@ -194,6 +198,12 @@ function handleMqttMessage(topic: string, messageBuffer: Buffer) {
 function seedBaselineDevice() {
   try {
     const db = getDb()
+    // Remove stale demo devices
+    try {
+      db.prepare("DELETE FROM devices WHERE deviceId IN ('867509082945058', '861185084200101')").run()
+      db.prepare("DELETE FROM device_history WHERE deviceId IN ('867509082945058', '861185084200101')").run()
+    } catch {}
+
     const imei = '861185084122719'
     const now = '2026-11-23T10:32:44Z'
     const samplePayload = {

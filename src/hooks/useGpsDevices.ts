@@ -43,7 +43,30 @@ export function useGpsDevices() {
     return () => unsubscribe()
   }, [])
 
-  return { devices, loading, error, refetch: fetchDevices }
+  const addDevice = useCallback(
+    async (params: { imei: string; deviceName?: string; modelId?: string }) => {
+      const newDev = await gpsService.addDevice(params)
+      setDevices((prev) => {
+        const existing = prev.findIndex((d) => d.deviceId === newDev.deviceId)
+        if (existing >= 0) {
+          const next = [...prev]
+          next[existing] = newDev
+          return next
+        }
+        return [newDev, ...prev]
+      })
+      return newDev
+    },
+    []
+  )
+
+  const deleteDevice = useCallback(async (deviceId: string) => {
+    await gpsService.deleteDevice(deviceId)
+    setDevices((prev) => prev.filter((d) => d.deviceId !== deviceId))
+    return true
+  }, [])
+
+  return { devices, loading, error, refetch: fetchDevices, addDevice, deleteDevice }
 }
 
 export function useGpsDevice(deviceId: string) {

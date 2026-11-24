@@ -3,82 +3,220 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.GpsStore = void 0;
 exports.getDb = getDb;
 exports.initDatabase = initDatabase;
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
-let db = null;
-// In-memory fallback if better-sqlite3 native addon cannot compile
-class InMemoryDatabase {
+const DEMO_DEVICE_IDS = new Set(['867509082945058', '861185084200101']);
+class GpsStore {
     devices = new Map();
     history = [];
     alerts = [];
+    filePath = null;
+    constructor(filePath) {
+        if (filePath) {
+            this.filePath = filePath;
+            this.loadFromFile();
+        }
+    }
+    loadFromFile() {
+        if (!this.filePath || !fs_1.default.existsSync(this.filePath))
+            return;
+        try {
+            const content = fs_1.default.readFileSync(this.filePath, 'utf-8');
+            const parsed = JSON.parse(content);
+            if (Array.isArray(parsed.devices)) {
+                for (const d of parsed.devices) {
+                    if (d.deviceId && !DEMO_DEVICE_IDS.has(d.deviceId)) {
+                        this.devices.set(d.deviceId, d);
+                    }
+                }
+            }
+            if (Array.isArray(parsed.history)) {
+                this.history = parsed.history.filter((h) => !DEMO_DEVICE_IDS.has(h.deviceId));
+            }
+            if (Array.isArray(parsed.alerts)) {
+                this.alerts = parsed.alerts.filter((a) => !DEMO_DEVICE_IDS.has(a.deviceId));
+            }
+            console.log(`[Database] Loaded ${this.devices.size} devices and ${this.history.length} telemetry points from ${this.filePath}`);
+        }
+        catch (err) {
+            console.warn('[Database] Could not parse existing store file:', err.message);
+        }
+    }
+    saveToFile() {
+        if (!this.filePath)
+            return;
+        try {
+            const dir = path_1.default.dirname(this.filePath);
+            if (!fs_1.default.existsSync(dir)) {
+                fs_1.default.mkdirSync(dir, { recursive: true });
+            }
+            const data = {
+                devices: Array.from(this.devices.values()),
+                history: this.history.slice(-2000), // Keep recent history
+                alerts: this.alerts.slice(-200),
+            };
+            fs_1.default.writeFileSync(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
+        }
+        catch (err) {
+            // In serverless read-only filesystems, fail silently
+        }
+    }
     pragma(_stmt) { }
     exec(_sql) { }
     prepare(sql) {
         const s = sql.trim().toLowerCase();
+        // INSERT INTO devices
         if (s.startsWith('insert into devices') || s.includes('on conflict(deviceid)')) {
             return {
                 run: (...params) => {
                     const [deviceId, deviceName, status, lastSeen, data, updatedAt] = params;
-                    this.devices.set(deviceId, { deviceId, deviceName, status, lastSeen, data, updatedAt });
+                    if (!DEMO_DEVICE_IDS.has(deviceId)) {
+                        this.devices.set(deviceId, { deviceId, deviceName, status, lastSeen, data, updatedAt });
+                        this.saveToFile();
+                    }
                     return { changes: 1 };
                 },
             };
         }
+        // INSERT INTO device_history
         if (s.startsWith('insert into device_history')) {
             return {
                 run: (...params) => {
-                    const [deviceId, latitude, longitude, altitude, speed, heading, accuracy, satellites, batteryPercentage, batteryVoltage, signalQuality, rssi, timestamp] = params;
-                    this.history.push({
-                        id: this.history.length + 1,
-                        deviceId,
-                        latitude,
-                        longitude,
-                        altitude,
-                        speed,
-                        heading,
-                        accuracy,
-                        satellites,
-                        batteryPercentage,
-                        batteryVoltage,
-                        signalQuality,
-                        rssi,
-                        timestamp,
-                    });
+                    const [deviceId, latitude, longitude, altitude, speed, heading, accuracy, satellites, batteryPercentage, batteryVoltage, signalQuality, rssi, timestamp,] = params;
+                    if (!DEMO_DEVICE_IDS.has(deviceId)) {
+                        this.history.push({
+                            id: this.history.length + 1,
+                            deviceId,
+                            latitude: Number(latitude) || 0,
+                            longitude: Number(longitude) || 0,
+                            altitude: Number(altitude) || 0,
+                            speed: Number(speed) || 0,
+                            heading: Number(heading) || 0,
+                            accuracy: Number(accuracy) || 2.5,
+                            satellites: Number(satellites) || 0,
+                            batteryPercentage: Number(batteryPercentage) || 0,
+                            batteryVoltage: Number(batteryVoltage) || 0,
+                            signalQuality: Number(signalQuality) || 0,
+                            rssi: Number(rssi) || 0,
+                            timestamp: String(timestamp),
+                        });
+                        // Cap history in memory
+                        if (this.history.length > 5000) {
+                            this.history = this.history.slice(-3000);
+                        }
+                        this.saveToFile();
+                    }
                     return { changes: 1 };
                 },
             };
         }
+        // INSERT INTO alerts
+        if (s.startsWith('insert into alerts')) {
+            return {
+                run: (...params) => {
+                    const [id, deviceId, type, message, severity, timestamp, acknowledged] = params;
+                    if (!DEMO_DEVICE_IDS.has(deviceId)) {
+                        this.alerts.push({
+                            id,
+                            deviceId,
+                            type,
+                            message,
+                            severity,
+                            timestamp,
+                            acknowledged: Number(acknowledged) || 0,
+                        });
+                        this.saveToFile();
+                    }
+                    return { changes: 1 };
+                },
+            };
+        }
+        // SELECT * FROM devices WHERE deviceId = ?
         if (s.startsWith('select * from devices where deviceid =')) {
             return {
-                get: (deviceId) => this.devices.get(deviceId) || null,
+                get: (deviceId) => {
+                    if (DEMO_DEVICE_IDS.has(deviceId))
+                        return null;
+                    return this.devices.get(deviceId) || null;
+                },
             };
         }
+        // SELECT * FROM devices
         if (s.startsWith('select * from devices')) {
             return {
-                all: () => Array.from(this.devices.values()),
+                all: () => {
+                    return Array.from(this.devices.values())
+                        .filter((d) => !DEMO_DEVICE_IDS.has(d.deviceId))
+                        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+                },
             };
         }
+        // DELETE FROM devices
+        if (s.startsWith('delete from devices')) {
+            return {
+                run: (...params) => {
+                    if (s.includes('where deviceid in')) {
+                        DEMO_DEVICE_IDS.forEach((id) => this.devices.delete(id));
+                    }
+                    else if (params[0]) {
+                        this.devices.delete(params[0]);
+                    }
+                    this.saveToFile();
+                    return { changes: 1 };
+                },
+            };
+        }
+        // DELETE FROM device_history
+        if (s.startsWith('delete from device_history')) {
+            return {
+                run: (...params) => {
+                    if (s.includes('where deviceid in')) {
+                        this.history = this.history.filter((h) => !DEMO_DEVICE_IDS.has(h.deviceId));
+                    }
+                    else if (params[0]) {
+                        this.history = this.history.filter((h) => h.deviceId !== params[0]);
+                    }
+                    this.saveToFile();
+                    return { changes: 1 };
+                },
+            };
+        }
+        // SELECT * FROM device_history
         if (s.startsWith('select * from device_history')) {
             return {
                 all: (...params) => {
                     const deviceId = params[0];
-                    return this.history.filter((h) => h.deviceId === deviceId).slice(-500);
+                    if (!deviceId || DEMO_DEVICE_IDS.has(deviceId))
+                        return [];
+                    return this.history
+                        .filter((h) => h.deviceId === deviceId)
+                        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+                        .slice(-500);
                 },
             };
         }
+        // SELECT * FROM alerts
         if (s.startsWith('select * from alerts')) {
             return {
-                all: () => [...this.alerts].reverse().slice(0, 50),
+                all: () => {
+                    return [...this.alerts]
+                        .filter((a) => !DEMO_DEVICE_IDS.has(a.deviceId))
+                        .reverse()
+                        .slice(0, 50);
+                },
             };
         }
+        // UPDATE alerts
         if (s.startsWith('update alerts')) {
             return {
                 run: (id) => {
                     const alert = this.alerts.find((a) => a.id === id);
                     if (alert)
                         alert.acknowledged = 1;
+                    this.saveToFile();
                     return { changes: 1 };
                 },
             };
@@ -90,70 +228,25 @@ class InMemoryDatabase {
         };
     }
 }
+exports.GpsStore = GpsStore;
+let storeInstance = null;
 function getDb() {
-    if (!db) {
+    if (!storeInstance) {
         throw new Error('Database not initialized. Call initDatabase() first.');
     }
-    return db;
+    return storeInstance;
 }
 async function initDatabase() {
+    if (storeInstance)
+        return storeInstance;
     try {
-        const DatabaseModule = await import('better-sqlite3');
-        const DatabaseConstructor = DatabaseModule.default || DatabaseModule;
-        const dbPath = process.env.DATABASE_PATH || './data/gps.db';
-        const resolvedPath = path_1.default.resolve(process.cwd(), dbPath);
-        const dir = path_1.default.dirname(resolvedPath);
-        if (!fs_1.default.existsSync(dir)) {
-            fs_1.default.mkdirSync(dir, { recursive: true });
-        }
-        db = new DatabaseConstructor(resolvedPath);
-        db.pragma('journal_mode = WAL');
-        db.exec(`
-      CREATE TABLE IF NOT EXISTS devices (
-        deviceId TEXT PRIMARY KEY,
-        deviceName TEXT NOT NULL,
-        status TEXT NOT NULL,
-        lastSeen TEXT NOT NULL,
-        data TEXT NOT NULL,
-        updatedAt TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS device_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        deviceId TEXT NOT NULL,
-        latitude REAL NOT NULL,
-        longitude REAL NOT NULL,
-        altitude REAL NOT NULL,
-        speed REAL NOT NULL,
-        heading REAL NOT NULL,
-        accuracy REAL NOT NULL,
-        satellites INTEGER DEFAULT 0,
-        batteryPercentage REAL NOT NULL,
-        batteryVoltage REAL NOT NULL,
-        signalQuality INTEGER NOT NULL,
-        rssi REAL NOT NULL,
-        timestamp TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS alerts (
-        id TEXT PRIMARY KEY,
-        deviceId TEXT NOT NULL,
-        type TEXT NOT NULL,
-        message TEXT NOT NULL,
-        severity TEXT NOT NULL,
-        timestamp TEXT NOT NULL,
-        acknowledged INTEGER DEFAULT 0
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_history_deviceId_timestamp ON device_history(deviceId, timestamp);
-      CREATE INDEX IF NOT EXISTS idx_alerts_deviceId ON alerts(deviceId);
-    `);
-        console.log(`[Database] SQLite database initialized at ${resolvedPath}`);
-        return db;
+        const storePath = process.env.DATA_STORE_PATH || path_1.default.resolve(process.cwd(), './data/gps-store.json');
+        storeInstance = new GpsStore(storePath);
+        console.log(`[Database] File-backed JSON store initialized at ${storePath}`);
     }
     catch (err) {
-        console.warn('[Database] Native SQLite unavailable, activated in-memory store:', err.message);
-        db = new InMemoryDatabase();
-        return db;
+        console.warn('[Database] Falling back to pure in-memory store:', err.message);
+        storeInstance = new GpsStore();
     }
+    return storeInstance;
 }
