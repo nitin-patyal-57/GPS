@@ -1,0 +1,21 @@
+services:
+  # Unified Web Service: Express API + WebSockets + React Frontend
+  - type: web
+    name: gps-dashboard
+    runtime: node
+    plan: starter
+    region: singapore
+    buildCommand: npm install && npm run build && cd server && npm install && npm run build
+    startCommand: node server/dist/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.0.0
+      - key: PORT
+        value: 10000
+      - key: DATABASE_PATH
+        value: ./data/gps.db
+      - key: MQTT_BROKER_URL
+        value: mqtts://avj249ldc7joq-ats.iot.ap-south-1.amazonaws.com:8883
+      - key: CORS_ORIGIN
+        value: "*"

@@ -1,5 +1,7 @@
 import express from 'express'
 import cors from 'cors'
+import path from 'path'
+import fs from 'fs'
 import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 import { initDatabase } from './services/database'
@@ -28,6 +30,23 @@ app.get('/api/health', (req, res) => {
     mqtt: getMqttStatus(),
   })
 })
+
+// Serve static frontend assets if built (for unified deployment on Render)
+const distPath = path.resolve(__dirname, '../../dist')
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath))
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/ws')) {
+      return next()
+    }
+    const indexPath = path.join(distPath, 'index.html')
+    if (fs.existsSync(indexPath)) {
+      res.sendFile(indexPath)
+    } else {
+      next()
+    }
+  })
+}
 
 // WebSocket connection handling
 wss.on('connection', (ws) => {
