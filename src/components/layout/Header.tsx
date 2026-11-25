@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Menu, RefreshCw, Sun, Moon, Search, Wifi, Plus, Clock } from 'lucide-react'
+import { Menu, RefreshCw, Sun, Moon, Search, Wifi, Plus, Clock, LogOut } from 'lucide-react'
 import { useTheme } from '@/context/ThemeContext'
 import { useRefresh } from '@/context/RefreshContext'
+import { useAuth } from '@/context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import { useGpsDevices } from '@/hooks/useGpsDevices'
 import AddDeviceModal from '@/components/devices/AddDeviceModal'
@@ -13,6 +14,7 @@ interface HeaderProps {
 export function Header({ onToggleSidebar }: HeaderProps) {
   const { isDark, toggleTheme } = useTheme()
   const { triggerRefresh } = useRefresh()
+  const { logout } = useAuth()
   const { addDevice } = useGpsDevices()
   const [search, setSearch] = useState('')
   const [isAddOpen, setIsAddOpen] = useState(false)
@@ -97,6 +99,21 @@ export function Header({ onToggleSidebar }: HeaderProps) {
           >
             {isDark ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4 text-indigo-500" />}
           </button>
+
+          {/* Admin User Logout */}
+          <div className="flex items-center gap-1.5 border-l border-slate-200 dark:border-slate-800 pl-2.5 ml-1">
+            <div className="hidden lg:flex flex-col text-right">
+              <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 leading-tight">Admin</span>
+              <span className="text-[9px] text-slate-400 font-mono leading-tight">admin@walnutmedical.in</span>
+            </div>
+            <button
+              onClick={logout}
+              title="Sign Out"
+              className="rounded-lg p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-600 dark:text-slate-400 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 transition"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </header>
 

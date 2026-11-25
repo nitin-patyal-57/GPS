@@ -11,8 +11,10 @@ import {
   X,
   Compass,
   UploadCloud,
+  LogOut,
 } from 'lucide-react'
 import { cn } from '@/utils/helpers'
+import { useAuth } from '@/context/AuthContext'
 
 interface SidebarProps {
   isOpen: boolean
@@ -32,6 +34,13 @@ const navItems = [
 ]
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
+  const { logout } = useAuth()
+
+  const handleLogout = () => {
+    onClose()
+    logout()
+  }
+
   return (
     <>
       {isOpen && (
@@ -97,6 +106,26 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             </NavLink>
           ))}
         </nav>
+
+        {/* Authenticated Admin User & Logout */}
+        <div className="p-3 mx-3 mb-2 rounded-xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-between">
+          <div className="flex items-center gap-2.5 overflow-hidden">
+            <div className="h-7 w-7 rounded-lg bg-emerald-500/20 text-emerald-400 font-bold text-xs flex items-center justify-center flex-shrink-0">
+              A
+            </div>
+            <div className="truncate">
+              <p className="text-xs font-bold text-white truncate">Administrator</p>
+              <p className="text-[10px] text-slate-400 font-mono truncate">admin@walnutmedical.in</p>
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            title="Sign Out"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition flex-shrink-0"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        </div>
 
         <div className="p-4 border-t border-slate-800 text-[11px] text-slate-500 flex flex-col gap-1">
           <div className="flex items-center justify-between">
