@@ -105,11 +105,18 @@ export default function OtaUpdatesPage() {
               : false
 
             if (sameJob || sameDevice) {
+              const currentHistory = next[i].ackHistory || []
+              const newEntry = {
+                status: derivedStatus,
+                timestamp: new Date().toISOString(),
+                payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
+              }
               next[i] = {
                 ...next[i],
                 status: derivedStatus,
                 ackedAt: new Date().toISOString(),
                 ackPayload: typeof payload === 'string' ? payload : JSON.stringify(payload),
+                ackHistory: [...currentHistory, newEntry],
               }
             }
           }
@@ -860,15 +867,27 @@ export default function OtaUpdatesPage() {
                           </td>
                           <td className="px-4 py-3">
                             {isSucceeded ? (
-                              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                                <span>SUCCEEDED</span>
-                              </span>
+                              <div className="space-y-0.5">
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                                  <span>SUCCEEDED</span>
+                                </span>
+                                {job.ackHistory && job.ackHistory.length > 1 && (
+                                  <p className="text-[10px] text-emerald-500/80 font-medium pl-1">
+                                    ✓ IN_PROGRESS &rarr; SUCCEEDED
+                                  </p>
+                                )}
+                              </div>
                             ) : isInProgress ? (
-                              <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/15 px-2.5 py-1 text-xs font-bold text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                                <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-500" />
-                                <span>IN_PROGRESS</span>
-                              </span>
+                              <div className="space-y-0.5">
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/15 px-2.5 py-1 text-xs font-bold text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-500" />
+                                  <span>IN_PROGRESS</span>
+                                </span>
+                                <p className="text-[10px] text-blue-400 font-medium pl-1 animate-pulse">
+                                  Downloading & Flashing...
+                                </p>
+                              </div>
                             ) : isFailed ? (
                               <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-bold text-red-600 dark:text-red-400 border border-red-500/20">
                                 <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
@@ -958,8 +977,43 @@ export default function OtaUpdatesPage() {
                 </div>
               </div>
 
+              {selectedJobForModal.ackHistory && selectedJobForModal.ackHistory.length > 0 && (
+                <div>
+                  <span className="text-slate-400 font-semibold block mb-1">
+                    ACK Progression Timeline ({selectedJobForModal.ackHistory.length} events received):
+                  </span>
+                  <div className="space-y-2 mb-3">
+                    {selectedJobForModal.ackHistory.map((item, idx) => (
+                      <div key={idx} className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px]">
+                        <div className="flex items-center justify-between pb-1 mb-1 border-b border-slate-800/80">
+                          <span
+                            className={`font-bold uppercase ${
+                              item.status === 'succeeded'
+                                ? 'text-emerald-400'
+                                : item.status === 'in_progress'
+                                ? 'text-blue-400'
+                                : item.status === 'failed'
+                                ? 'text-red-400'
+                                : 'text-amber-400'
+                            }`}
+                          >
+                            Step {idx + 1}: {item.status.toUpperCase()}
+                          </span>
+                          <span className="font-mono text-[10px] text-slate-400">
+                            {formatTimeSafe(item.timestamp, 'HH:mm:ss')} ({formatRelativeTime(item.timestamp)})
+                          </span>
+                        </div>
+                        <pre className="font-mono text-[10px] text-emerald-400 overflow-x-auto whitespace-pre-wrap">
+                          {typeof item.payload === 'string' ? item.payload : JSON.stringify(item.payload, null, 2)}
+                        </pre>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
-                <span className="text-slate-400 font-semibold block mb-1">Raw Acknowledgment JSON:</span>
+                <span className="text-slate-400 font-semibold block mb-1">Latest Acknowledgment JSON:</span>
                 <pre className="rounded-xl bg-slate-950 p-3 font-mono text-[11px] text-emerald-400 overflow-x-auto whitespace-pre-wrap border border-slate-800">
                   {selectedJobForModal.ackPayload || 'No payload recorded'}
                 </pre>

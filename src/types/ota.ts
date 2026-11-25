@@ -9,6 +9,12 @@ export interface OtaDeployParams {
   version: string
 }
 
+export interface OtaAckLogEntry {
+  status: string
+  timestamp: string
+  payload: any
+}
+
 export interface OtaJobRecord {
   id: string
   jobId: string
@@ -22,6 +28,7 @@ export interface OtaJobRecord {
   sentAt: string
   ackedAt?: string
   ackPayload?: string
+  ackHistory?: OtaAckLogEntry[]
 }
 
 export interface OtaDeployResponse {

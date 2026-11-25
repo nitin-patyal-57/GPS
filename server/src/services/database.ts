@@ -37,6 +37,12 @@ export interface AlertRecord {
   acknowledged: number
 }
 
+export interface OtaAckLogEntry {
+  status: string
+  timestamp: string
+  payload: any
+}
+
 export interface OtaJobRecord {
   id: string
   jobId: string
@@ -50,6 +56,7 @@ export interface OtaJobRecord {
   sentAt: string
   ackedAt?: string
   ackPayload?: string
+  ackHistory?: OtaAckLogEntry[]
 }
 
 const DEMO_DEVICE_IDS = new Set(['867509082945058', '861185084200101'])
@@ -155,6 +162,14 @@ export class GpsStore {
         job.status = derivedStatus
         job.ackedAt = now
         job.ackPayload = ackPayloadStr
+        if (!Array.isArray(job.ackHistory)) {
+          job.ackHistory = []
+        }
+        job.ackHistory.push({
+          status: derivedStatus,
+          timestamp: now,
+          payload: typeof ackData === 'string' ? JSON.parse(ackData) : ackData,
+        })
         updated = true
       }
     }

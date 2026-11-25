@@ -108,6 +108,14 @@ class GpsStore {
                 job.status = derivedStatus;
                 job.ackedAt = now;
                 job.ackPayload = ackPayloadStr;
+                if (!Array.isArray(job.ackHistory)) {
+                    job.ackHistory = [];
+                }
+                job.ackHistory.push({
+                    status: derivedStatus,
+                    timestamp: now,
+                    payload: typeof ackData === 'string' ? JSON.parse(ackData) : ackData,
+                });
                 updated = true;
             }
         }
