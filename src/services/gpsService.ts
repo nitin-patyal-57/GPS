@@ -1,6 +1,6 @@
 import { config } from './config'
 import type { GpsDevice, GpsAlert, LocationHistoryEntry } from '@/types/gps'
-import { BASELINE_GPS_DEVICE } from './baselineDevice'
+import { BASELINE_GPS_DEVICE, ACTIVE_GPS_DEVICE } from './baselineDevice'
 
 export const DEMO_DEVICE_IDS = new Set(['867509082945058', '861185084200101'])
 const STORAGE_CUSTOM_KEY = 'custom_gps_devices'
@@ -136,6 +136,11 @@ export const gpsService = {
       }
     }
 
+    // Default active real device if not explicitly deleted and not already in map
+    if (!deleted.has(ACTIVE_GPS_DEVICE.deviceId) && !deviceMap.has(ACTIVE_GPS_DEVICE.deviceId)) {
+      deviceMap.set(ACTIVE_GPS_DEVICE.deviceId, ACTIVE_GPS_DEVICE)
+    }
+
     // Default baseline real device if not explicitly deleted and not already in map
     if (!deleted.has(BASELINE_GPS_DEVICE.deviceId) && !deviceMap.has(BASELINE_GPS_DEVICE.deviceId)) {
       deviceMap.set(BASELINE_GPS_DEVICE.deviceId, BASELINE_GPS_DEVICE)
@@ -181,6 +186,10 @@ export const gpsService = {
     const matched = custom.find((d) => d.deviceId === id)
     if (matched && !isIgnoredDevice(matched.deviceId) && !deleted.has(matched.deviceId)) {
       return matched
+    }
+
+    if (id === ACTIVE_GPS_DEVICE.deviceId && !deleted.has(id)) {
+      return ACTIVE_GPS_DEVICE
     }
 
     if (id === BASELINE_GPS_DEVICE.deviceId && !deleted.has(id)) {

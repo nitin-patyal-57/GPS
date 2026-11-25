@@ -474,6 +474,85 @@ function seedBaselineDevice() {
         updatedAt = excluded.updatedAt
     `).run(imei, baseline.deviceName, 'online', now, JSON.stringify(baseline), now)
 
+    // Seed active transmitting tracker 861185084122693 as well
+    const activeImei = '861185084122693'
+    const activeNow = new Date().toISOString()
+    const activePayload = {
+      device: {
+        imei: activeImei,
+        model_id: 'GW1NS-4',
+        serial_no: '',
+        app_v: 'WMZ_DEV_1.0.2',
+        sdk_v: 'WM_SDK_C_261008',
+        hw_v: 'Z636_V1',
+        boot_reason: 'power-off charging',
+        uptime_sec: 120,
+      },
+      power: {
+        bat_v: 4200,
+        bat_lvl: 100,
+        charging: 'Y',
+        usb: 'Y',
+        ext_power: 'Y',
+        ext_power_v: '',
+        low_battery: false,
+      },
+      cellular: {
+        imsi: '404022437552332',
+        operator: 'IND airtel',
+        net_t: 'LTE',
+        mcc: '404',
+        mnc: '02',
+        cell_id: '128026133',
+        tac: '7911',
+        rssi: 29,
+        rsrp: 52,
+        rsrq: 13,
+        sinr: -4,
+        signal: 'EXCELLENT',
+        band: '3',
+        ip4: '172.18.222.207',
+        ip6: '',
+      },
+      gps: {
+        status: 'FIXED',
+        latitude: 30.65708,
+        longitude: 76.72965,
+        altitude_m: 302,
+        speed_kmph: 0,
+        heading_deg: 180,
+        satellites: 21,
+        hdop: 0.7,
+        accuracy_m: 3.0,
+        fix_type: '3D',
+        last_fix: activeNow,
+        location: '30.65708, 76.72965',
+      },
+      accelerometer: {
+        status: 'OK',
+        motion: false,
+        x_g: 0,
+        y_g: 0,
+        z_g: -1,
+        harsh_braking_count: 0,
+        harsh_acceleration_count: 0,
+        sharp_turn_count: 0,
+        impact_count: 0,
+        driving_score: '',
+      },
+      rtc: activeNow,
+    }
+
+    const activeTracker = parseGpsMetrics(activePayload, activeImei, activeNow)
+    db.prepare(`
+      INSERT INTO devices (deviceId, deviceName, status, lastSeen, data, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(deviceId) DO UPDATE SET
+        data = excluded.data,
+        status = excluded.status,
+        updatedAt = excluded.updatedAt
+    `).run(activeImei, activeTracker.deviceName, 'online', activeNow, JSON.stringify(activeTracker), activeNow)
+
     console.log(`[MQTT] Seeded baseline GPS device ${imei} into database`)
   } catch (err) {
     console.error('[MQTT] Seed error:', err)

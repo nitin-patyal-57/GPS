@@ -1,6 +1,6 @@
 // Production Render backend & WebSocket endpoints
-const RENDER_BACKEND_URL = 'https://gps-server-9skp.onrender.com'
-const RENDER_WS_URL = 'wss://gps-server-9skp.onrender.com/ws'
+const RENDER_BACKEND_URL = 'https://gps-3t1e.onrender.com'
+const RENDER_WS_URL = 'wss://gps-3t1e.onrender.com/ws'
 
 function getApiUrl(): string {
   if (typeof window === 'undefined') return 'http://localhost:3001'
