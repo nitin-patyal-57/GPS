@@ -124,11 +124,6 @@ export const gpsService = {
     // Combine server devices + local custom devices
     const deviceMap = new Map<string, GpsDevice>()
 
-    // Default baseline real device if not explicitly deleted
-    if (!deleted.has(BASELINE_GPS_DEVICE.deviceId)) {
-      deviceMap.set(BASELINE_GPS_DEVICE.deviceId, BASELINE_GPS_DEVICE)
-    }
-
     for (const d of serverDevices) {
       if (!isIgnoredDevice(d.deviceId) && !deleted.has(d.deviceId)) {
         deviceMap.set(d.deviceId, d)
@@ -141,7 +136,20 @@ export const gpsService = {
       }
     }
 
-    return Array.from(deviceMap.values())
+    // Default baseline real device if not explicitly deleted and not already in map
+    if (!deleted.has(BASELINE_GPS_DEVICE.deviceId) && !deviceMap.has(BASELINE_GPS_DEVICE.deviceId)) {
+      deviceMap.set(BASELINE_GPS_DEVICE.deviceId, BASELINE_GPS_DEVICE)
+    }
+
+    const list = Array.from(deviceMap.values())
+    // Sort so the actively communicating device (newest lastSeen) appears first
+    list.sort((a, b) => {
+      const timeA = new Date(a.lastSeen || 0).getTime()
+      const timeB = new Date(b.lastSeen || 0).getTime()
+      return timeB - timeA
+    })
+
+    return list
   },
 
   async getDeviceById(id: string): Promise<GpsDevice | undefined> {

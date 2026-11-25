@@ -49,21 +49,17 @@ export function useGpsDevices() {
           (d) => d && d.deviceId && !isIgnoredDevice(d.deviceId) && !deleted.has(d.deviceId)
         )
         const index = cleanPrev.findIndex((d) => d.deviceId === deviceId)
+        let next: GpsDevice[]
         if (index >= 0) {
-          const next = [...cleanPrev]
+          next = [...cleanPrev]
           next[index] = { ...next[index], ...updatedDevice }
-          return next
+        } else {
+          // Auto-add any incoming active tracker that is not ignored or deleted
+          next = [updatedDevice, ...cleanPrev]
         }
-
-        // Only auto-add if it was explicitly registered in custom storage or is the primary baseline device
-        const custom = getCustomDevicesFromStorage()
-        const isRegistered = custom.some((c) => c.deviceId === deviceId) || deviceId === '861185084122719'
-        if (isRegistered) {
-          return [updatedDevice, ...cleanPrev]
-        }
-
-        // Otherwise drop the unsolicited soundbox packet
-        return cleanPrev
+        // Keep active transmitting devices at the top
+        next.sort((a, b) => new Date(b.lastSeen || 0).getTime() - new Date(a.lastSeen || 0).getTime())
+        return next
       })
     })
 
