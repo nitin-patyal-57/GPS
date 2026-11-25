@@ -28,6 +28,7 @@ import {
   Radio,
   CheckSquare,
   Square,
+  Sparkles,
 } from 'lucide-react'
 import { formatRelativeTime, formatTimeSafe, parseDateSafe } from '@/utils/helpers'
 
@@ -59,6 +60,8 @@ export default function OtaUpdatesPage() {
   const [urlAddress, setUrlAddress] = useState('https://firmware.gw1ns.io/builds/customer_app_v1.0.3.bin')
   const [version, setVersion] = useState('WMZ_DEV_1.0.3')
   const [fileSha256, setFileSha256] = useState('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')
+  const [isComputingHash, setIsComputingHash] = useState(false)
+  const [hashStatus, setHashStatus] = useState<{ message: string; success: boolean } | null>(null)
 
   // Deployment & ACK state
   const [isDeploying, setIsDeploying] = useState(false)
@@ -192,6 +195,34 @@ export default function OtaUpdatesPage() {
     navigator.clipboard.writeText(samplePayload)
     setCopiedPayload(true)
     setTimeout(() => setCopiedPayload(false), 2000)
+  }
+
+  const handleComputeHash = async () => {
+    if (!urlAddress.trim()) {
+      setHashStatus({ message: 'Please enter a valid Binary URL first', success: false })
+      return
+    }
+    setIsComputingHash(true)
+    setHashStatus(null)
+    try {
+      const res = await otaService.computeHashFromUrl(urlAddress.trim())
+      if (res.success && res.sha256) {
+        setFileSha256(res.sha256)
+        setHashStatus({
+          message: `SHA-256 computed: ${res.sizeKb ? `${res.sizeKb} KB` : ''}`,
+          success: true,
+        })
+      } else {
+        setHashStatus({
+          message: res.error || 'Failed to download binary from URL',
+          success: false,
+        })
+      }
+    } catch (err: any) {
+      setHashStatus({ message: err.message || 'Compute error', success: false })
+    } finally {
+      setIsComputingHash(false)
+    }
   }
 
   // Deploy OTA batch
@@ -636,16 +667,21 @@ export default function OtaUpdatesPage() {
                   </label>
                   <button
                     type="button"
-                    onClick={() =>
-                      setFileSha256(
-                        Array.from({ length: 64 }, () =>
-                          Math.floor(Math.random() * 16).toString(16)
-                        ).join('')
-                      )
-                    }
-                    className="text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:underline"
+                    onClick={handleComputeHash}
+                    disabled={isComputingHash}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline disabled:opacity-50 transition"
                   >
-                    Generate Hex
+                    {isComputingHash ? (
+                      <>
+                        <RefreshCw className="h-3 w-3 animate-spin" />
+                        Downloading & Computing...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-3 w-3" />
+                        Compute SHA-256 from URL
+                      </>
+                    )}
                   </button>
                 </div>
                 <input
@@ -655,6 +691,16 @@ export default function OtaUpdatesPage() {
                   placeholder="64-character hex SHA-256 hash"
                   className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-mono text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                 />
+                {hashStatus && (
+                  <p
+                    className={`text-[11px] font-medium flex items-center gap-1 mt-1 ${
+                      hashStatus.success ? 'text-emerald-500' : 'text-rose-500'
+                    }`}
+                  >
+                    {hashStatus.success ? <Check className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                    {hashStatus.message}
+                  </p>
+                )}
               </div>
 
               {/* Live Payload Preview */}

@@ -88,6 +88,23 @@ export const otaService = {
     }
   },
 
+  async computeHashFromUrl(url: string): Promise<{ success: boolean; sha256?: string; sizeBytes?: number; sizeKb?: string; error?: string }> {
+    try {
+      const res = await fetch(`${config.apiUrl}/api/ota/compute-hash`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        return data
+      }
+      return { success: false, error: data.error || `HTTP ${res.status}` }
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to connect to hash service' }
+    }
+  },
+
   async getOtaJobs(limit = 100): Promise<OtaJobRecord[]> {
     try {
       const res = await fetch(`${config.apiUrl}/api/ota/jobs?limit=${limit}&_t=${Date.now()}`)

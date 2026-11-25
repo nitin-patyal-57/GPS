@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import crypto from 'crypto'
 import { getDb, OtaJobRecord } from '../services/database'
 import { publishOtaPayload } from '../services/mqttService'
 import { broadcast } from '../services/websocket'
@@ -95,6 +96,66 @@ router.post('/ota/deploy', async (req, res) => {
   } catch (err: any) {
     console.error('[OTA Deploy] Error:', err)
     res.status(500).json({ error: err.message || 'Failed to dispatch OTA payloads' })
+  }
+})
+
+/**
+ * POST /api/ota/compute-hash
+ * Downloads binary from given URL and computes its real SHA-256 hash
+ */
+router.post('/ota/compute-hash', async (req, res) => {
+  try {
+    const { url } = req.body
+    if (!url || typeof url !== 'string' || !url.trim()) {
+      return res.status(400).json({ error: 'Valid URL is required' })
+    }
+
+    const cleanUrl = url.trim()
+    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+      return res.status(400).json({ error: 'URL must start with http:// or https://' })
+    }
+
+    console.log(`[OTA Compute Hash] Fetching binary from: ${cleanUrl}`)
+
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 20000)
+
+    const response = await fetch(cleanUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'GPS-Telemetry-OTA/1.0',
+      },
+    })
+    clearTimeout(timeout)
+
+    if (!response.ok) {
+      return res.status(400).json({
+        error: `Could not download from URL: HTTP ${response.status} ${response.statusText}`,
+      })
+    }
+
+    const arrayBuffer = await response.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+    const sizeBytes = buffer.length
+
+    if (sizeBytes === 0) {
+      return res.status(400).json({ error: 'Downloaded file is empty (0 bytes)' })
+    }
+
+    const hash = crypto.createHash('sha256').update(buffer).digest('hex')
+    console.log(`[OTA Compute Hash] Computed SHA-256 for ${cleanUrl}: ${hash} (${sizeBytes} bytes)`)
+
+    res.json({
+      success: true,
+      sha256: hash,
+      sizeBytes,
+      sizeKb: (sizeBytes / 1024).toFixed(1),
+    })
+  } catch (err: any) {
+    console.error('[OTA Compute Hash] Error:', err.message)
+    res.status(500).json({
+      error: err.name === 'AbortError' ? 'Download timed out (exceeded 20s)' : (err.message || 'Failed to compute SHA-256 from URL'),
+    })
   }
 })
 
