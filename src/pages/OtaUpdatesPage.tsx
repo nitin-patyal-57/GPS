@@ -599,7 +599,7 @@ export default function OtaUpdatesPage() {
               {/* URL Address Input */}
               <div className="mb-3 space-y-1">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-                  Firmware Binary URL (<code className="text-slate-400">url_address</code>)
+                  Binary URL (<code className="text-slate-400">url_address</code>)
                 </label>
                 <input
                   type="url"
