@@ -316,7 +316,8 @@ export const gpsService = {
     if (deleted.has(deviceId)) return []
 
     try {
-      const url = new URL(`${config.apiUrl}/api/devices/${deviceId}/history`)
+      const base = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001'
+      const url = new URL(`${config.apiUrl || ''}/api/devices/${deviceId}/history`, base)
       url.searchParams.set('_t', String(Date.now()))
       if (from) url.searchParams.set('from', from)
       if (to) url.searchParams.set('to', to)
