@@ -777,7 +777,7 @@ export default function OtaUpdatesPage() {
                   Live OTA Acknowledgment Monitor
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Real-time status of dispatched OTA packets listening for device ACKs on <code className="text-emerald-500">/ack</code> and <code className="text-emerald-500">soundbox_dev/+/ack</code>
+                  Real-time status of dispatched OTA packets listening for device ACKs on <code className="text-emerald-500">soundbox_dev/&lt;imei&gt;/ack</code>
                 </p>
               </div>
 
@@ -841,7 +841,7 @@ export default function OtaUpdatesPage() {
                           <td className="px-4 py-3">
                             <p className="font-mono font-bold text-slate-800 dark:text-slate-200">{job.deviceId}</p>
                             <p className="text-[10px] text-slate-400">
-                              Topic: soundbox_dev/{job.deviceId}/{job.otaType}
+                              ACK Topic: <code className="text-emerald-500 font-mono">soundbox_dev/{job.deviceId}/ack</code>
                             </p>
                           </td>
                           <td className="px-4 py-3">
