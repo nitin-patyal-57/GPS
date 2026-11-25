@@ -328,7 +328,7 @@ export const gpsService = {
       })
       if (res.ok) {
         const rows = await res.json()
-        if (Array.isArray(rows) && rows.length > 0) {
+        if (Array.isArray(rows)) {
           return rows.map((r: any) => ({
             id: String(r.id),
             deviceId: r.deviceId,
@@ -345,29 +345,10 @@ export const gpsService = {
         }
       }
     } catch {
-      // fallback
+      // Ignore network errors and return empty list
     }
 
-    const baseTime = new Date('2026-11-23T10:32:44Z').getTime()
-    const mockTrail: LocationHistoryEntry[] = []
-    for (let i = 0; i < 25; i++) {
-      const offsetLat = (i * 0.00045) + (Math.sin(i / 3) * 0.0002)
-      const offsetLng = (i * 0.00035) + (Math.cos(i / 3) * 0.0002)
-      mockTrail.push({
-        id: `hist_${i}`,
-        deviceId,
-        latitude: 30.657035 + offsetLat,
-        longitude: 76.729596 + offsetLng,
-        altitude: 301.7 + (i * 0.2),
-        speed: i > 5 && i < 20 ? 32 + (i % 8) : 0,
-        heading: 183 + (i * 2),
-        accuracy: 2.9,
-        satellites: 29,
-        timestamp: new Date(baseTime - (25 - i) * 60000).toISOString(),
-        isFixed: true,
-      })
-    }
-    return mockTrail
+    return []
   },
 
   async getAlerts(): Promise<GpsAlert[]> {

@@ -4,6 +4,7 @@ import RouteTracker from '@/components/route/RouteTracker'
 import RouteProgressBar from '@/components/route/RouteProgressBar'
 import Card from '@/components/ui/Card'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import EmptyState from '@/components/ui/EmptyState'
 import { Search, Navigation, Calendar } from 'lucide-react'
 import { calculateDistanceKm, formatTimeSafe } from '@/utils/helpers'
 
@@ -105,6 +106,14 @@ export default function RouteHistoryPage() {
 
       {historyLoading ? (
         <LoadingSpinner message="Fetching historical GNSS telemetry..." />
+      ) : history.length === 0 ? (
+        <EmptyState
+          icon={<Navigation className="h-8 w-8 text-slate-400" />}
+          title="No Route History Recorded"
+          description={`No recorded route breadcrumbs or telemetry coordinates found for ${
+            devices.find((d) => d.deviceId === activeDeviceId)?.deviceName || activeDeviceId || 'this device'
+          }${from || to ? ' in the selected timeframe' : ''}. Historical route coordinates will appear here automatically when the tracker is in motion.`}
+        />
       ) : (
         <>
           <RouteProgressBar
