@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useGpsDevice } from '@/hooks/useGpsDevices'
 import { gpsService } from '@/services/gpsService'
@@ -24,7 +24,7 @@ import {
   RefreshCw,
   Power,
 } from 'lucide-react'
-import { formatTimeSafe, formatRelativeTime, formatUptime, getHeadingDirection } from '@/utils/helpers'
+import { formatTimeSafe, formatRelativeTime, formatUptime, getHeadingDirection, parseDateSafe } from '@/utils/helpers'
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -84,6 +84,15 @@ export default function GpsDetailPage() {
   if (error || !device) return <ErrorState message={error || 'Device not found'} onRetry={refetch} />
 
   const isMoving = (device.gps?.speedKmph || 0) > 1.5
+
+  const isMqttConnected = useMemo(() => {
+    if (!device) return false
+    if (device.status !== 'online') return false
+    const d = parseDateSafe(device.lastSeen)
+    if (!d) return false
+    const diffMs = Date.now() - d.getTime()
+    return diffMs >= 0 && diffMs < 15 * 60 * 1000 // Connected within 15 minutes
+  }, [device])
 
   return (
     <div className="space-y-6">
@@ -242,36 +251,38 @@ export default function GpsDetailPage() {
           </div>
         </Card>
 
-        {/* 6. Diagnostic Controls */}
-        <Card padding="md">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100 flex items-center gap-2 mb-3">
-            <Sparkles className="h-4 w-4 text-emerald-500" />
-            Device LED Diagnostics
-          </h3>
-          <p className="text-xs text-slate-400 mb-3">
-            Send remote LED test blink commands to verify physical tracker indicators via MQTT.
-          </p>
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              onClick={() => handleLed('green', 'blink')}
-              className="rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 py-2 text-xs font-bold hover:bg-emerald-600/30 transition"
-            >
-              Blink Green
-            </button>
-            <button
-              onClick={() => handleLed('red', 'blink')}
-              className="rounded-lg bg-red-600/20 text-red-400 border border-red-500/30 py-2 text-xs font-bold hover:bg-red-600/30 transition"
-            >
-              Blink Red
-            </button>
-            <button
-              onClick={() => handleLed('blue', 'blink')}
-              className="rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 py-2 text-xs font-bold hover:bg-blue-600/30 transition"
-            >
-              Blink Blue
-            </button>
-          </div>
-        </Card>
+        {/* 6. Diagnostic Controls - Only shown when device is connected to MQTT */}
+        {isMqttConnected && (
+          <Card padding="md">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100 flex items-center gap-2 mb-3">
+              <Sparkles className="h-4 w-4 text-emerald-500" />
+              Device LED Diagnostics
+            </h3>
+            <p className="text-xs text-slate-400 mb-3">
+              Send remote LED test blink commands to verify physical tracker indicators via MQTT.
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                onClick={() => handleLed('green', 'blink')}
+                className="rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 py-2 text-xs font-bold hover:bg-emerald-600/30 transition"
+              >
+                Blink Green
+              </button>
+              <button
+                onClick={() => handleLed('red', 'blink')}
+                className="rounded-lg bg-red-600/20 text-red-400 border border-red-500/30 py-2 text-xs font-bold hover:bg-red-600/30 transition"
+              >
+                Blink Red
+              </button>
+              <button
+                onClick={() => handleLed('blue', 'blink')}
+                className="rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 py-2 text-xs font-bold hover:bg-blue-600/30 transition"
+              >
+                Blink Blue
+              </button>
+            </div>
+          </Card>
+        )}
       </div>
     </div>
   )
