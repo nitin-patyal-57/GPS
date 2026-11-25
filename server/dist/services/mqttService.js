@@ -569,31 +569,23 @@ function initMqttService(broadcast) {
                 TOPIC_SOUNDBOX_ACK,
                 TOPIC_SOUNDBOX_OTA_ACK,
                 'soundbox_dev/+/ota',
-                'soundbox_dev/+/ota/ack',
                 'soundbox_dev/+/command/ack',
-                'soundbox_dev/+/APP_OTA',
-                'soundbox_dev/+/DF_OTA',
-                'soundbox_dev/+/status',
-                'soundbox_dev/+/response',
                 TOPIC_WEGW_ACK,
                 TOPIC_WEGW_OTA_ACK,
                 TOPIC_LEGACY_GPS_UPLINK,
                 'wegw/+/ota',
-                'wegw/+/APP_OTA',
-                'wegw/+/DF_OTA',
-                'APP_OTA',
-                'DF_OTA',
-                '+/APP_OTA',
-                '+/DF_OTA',
                 TOPIC_ROOT_ACK,
                 TOPIC_PLUS_ACK,
-                '+/+/ack',
             ];
-            mqttClient?.subscribe(topicsToSubscribe, { qos: 1 }, (err) => {
-                if (err)
-                    console.error('[MQTT] Subscription error:', err);
-                else
-                    console.log(`[MQTT] Subscribed to telemetry and ACK topics: ${topicsToSubscribe.join(', ')}`);
+            topicsToSubscribe.forEach((t) => {
+                mqttClient?.subscribe(t, { qos: 1 }, (err) => {
+                    if (err) {
+                        console.warn(`[MQTT] Could not subscribe to ${t}:`, err.message);
+                    }
+                    else {
+                        console.log(`[MQTT] Subscribed to ${t}`);
+                    }
+                });
             });
         });
         mqttClient.on('message', (topic, payload) => {
@@ -609,37 +601,48 @@ function initMqttService(broadcast) {
     return mqttClient;
 }
 async function publishOtaPayload(imei, otaPayload) {
-    return new Promise((resolve) => {
-        if (!mqttClient || !mqttClient.connected) {
-            console.warn(`[MQTT] Cannot dispatch OTA: broker not connected`);
-            resolve(false);
-            return;
-        }
-        const jsonStr = typeof otaPayload === 'string' ? otaPayload : JSON.stringify(otaPayload);
-        // Publish to downlink topics
-        const typeStr = otaPayload?.ota_type || 'APP_OTA';
-        const topics = [
-            `${TOPIC_SOUNDBOX_CMD_PREFIX}${imei}/command`,
-            `${TOPIC_SOUNDBOX_CMD_PREFIX}${imei}/ota`,
-            `${TOPIC_SOUNDBOX_CMD_PREFIX}${imei}/${typeStr}`,
-            `wegw/${imei}/ota`,
-            `wegw/${imei}/${typeStr}`,
-            `${typeStr}`,
-        ];
-        let completed = 0;
-        let anySuccess = false;
-        for (const t of topics) {
-            mqttClient.publish(t, jsonStr, { qos: 1, retain: false }, (err) => {
-                completed++;
-                if (!err)
-                    anySuccess = true;
-                if (completed === topics.length) {
-                    console.log(`[MQTT OTA] Sent payload to ${topics.join(', ')}: ${jsonStr}`);
-                    resolve(anySuccess);
-                }
+    const jsonStr = typeof otaPayload === 'string' ? otaPayload : JSON.stringify(otaPayload);
+    // Ensure client is connected, or wait up to 5s if momentarily reconnecting
+    if (!mqttClient || !mqttClient.connected) {
+        console.log(`[MQTT] Waiting for broker connection before publishing OTA to ${imei}...`);
+        await new Promise((resolve) => {
+            if (mqttClient && mqttClient.connected)
+                return resolve();
+            const timer = setTimeout(() => resolve(), 5000);
+            mqttClient?.once('connect', () => {
+                clearTimeout(timer);
+                resolve();
+            });
+        });
+    }
+    if (!mqttClient || !mqttClient.connected) {
+        console.warn(`[MQTT] Cannot dispatch OTA: broker not connected after wait`);
+        return false;
+    }
+    const topics = [
+        `${TOPIC_SOUNDBOX_CMD_PREFIX}${imei}/command`,
+        `${TOPIC_SOUNDBOX_CMD_PREFIX}${imei}/ota`,
+        `wegw/${imei}/ota`,
+    ];
+    let anySuccess = false;
+    for (const t of topics) {
+        try {
+            await new Promise((res) => {
+                mqttClient.publish(t, jsonStr, { qos: 1, retain: false }, (err) => {
+                    if (!err) {
+                        anySuccess = true;
+                        console.log(`[MQTT OTA] Successfully dispatched to ${t}: ${jsonStr}`);
+                    }
+                    else {
+                        console.warn(`[MQTT OTA] Publish to ${t} warning:`, err.message);
+                    }
+                    res();
+                });
             });
         }
-    });
+        catch { }
+    }
+    return anySuccess;
 }
 async function publishLedCommand(imei, led, state, durationS = 0) {
     const id = `cmd_${Date.now()}`;
