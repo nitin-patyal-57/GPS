@@ -198,27 +198,27 @@ function handleMqttMessage(topic: string, messageBuffer: Buffer) {
       parsedJson = JSON.parse(rawPayload)
     } catch {}
 
-    // Handle OTA ACK & Progress messages (checks payload signature and topics)
-    const isOtaPacket =
-      Boolean(
-        parsedJson &&
-          (parsedJson.ota_type ||
-            parsedJson.jobId ||
-            parsedJson.job_id ||
-            parsedJson.topic === 'APP_OTA' ||
-            parsedJson.topic === 'DF_OTA' ||
-            parsedJson.status === 'IN_PROGRESS' ||
-            parsedJson.status === 'SUCCEEDED' ||
-            parsedJson.status === 'FAILED')
-      ) ||
+    // A real device ACK MUST be on an /ack topic OR have an explicit device status ("IN_PROGRESS", "SUCCEEDED", etc.)
+    // Downlink commands (which only contain url_address/file_sha256 without status on non-ack topics) are strictly ignored!
+    const isAckTopic =
       topic.endsWith('/ack') ||
       topic === '/ack' ||
-      topic.includes('/ack') ||
-      topic.includes('/ota') ||
-      topic.includes('APP_OTA') ||
-      topic.includes('DF_OTA')
+      topic.includes('/ack')
 
-    if (isOtaPacket && !topic.endsWith('/metrics')) {
+    const hasDeviceStatus = Boolean(
+      parsedJson &&
+        parsedJson.status &&
+        (parsedJson.status === 'IN_PROGRESS' ||
+          parsedJson.status === 'SUCCEEDED' ||
+          parsedJson.status === 'FAILED' ||
+          parsedJson.status === 'SUCCESS' ||
+          parsedJson.status === 'FAILED_SHA' ||
+          parsedJson.status === 'FAILED_DOWNLOAD')
+    )
+
+    const isDeviceAck = (isAckTopic || hasDeviceStatus) && !topic.endsWith('/metrics')
+
+    if (isDeviceAck) {
       console.log(`[MQTT OTA ACK] Received on topic "${topic}": ${rawPayload}`)
       const ackJson = parsedJson || { raw: rawPayload }
 
@@ -614,12 +614,10 @@ export function initMqttService(broadcast: (event: string, data: unknown) => voi
         TOPIC_SOUNDBOX_METRICS,
         TOPIC_SOUNDBOX_ACK,
         TOPIC_SOUNDBOX_OTA_ACK,
-        'soundbox_dev/+/ota',
         'soundbox_dev/+/command/ack',
         TOPIC_WEGW_ACK,
         TOPIC_WEGW_OTA_ACK,
         TOPIC_LEGACY_GPS_UPLINK,
-        'wegw/+/ota',
         TOPIC_ROOT_ACK,
         TOPIC_PLUS_ACK,
       ]
