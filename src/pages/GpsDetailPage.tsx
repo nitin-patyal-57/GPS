@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useGpsDevice } from '@/hooks/useGpsDevices'
 import { gpsService } from '@/services/gpsService'
@@ -85,14 +85,10 @@ export default function GpsDetailPage() {
 
   const isMoving = (device.gps?.speedKmph || 0) > 1.5
 
-  const isMqttConnected = useMemo(() => {
-    if (!device) return false
-    if (device.status !== 'online') return false
-    const d = parseDateSafe(device.lastSeen)
-    if (!d) return false
-    const diffMs = Date.now() - d.getTime()
-    return diffMs >= 0 && diffMs < 15 * 60 * 1000 // Connected within 15 minutes
-  }, [device])
+  const lastSeenDate = parseDateSafe(device.lastSeen)
+  const isMqttConnected =
+    device.status === 'online' &&
+    Boolean(lastSeenDate && Date.now() - lastSeenDate.getTime() < 15 * 60 * 1000)
 
   return (
     <div className="space-y-6">
