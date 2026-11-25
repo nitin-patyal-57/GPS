@@ -197,23 +197,43 @@ function handleMqttMessage(topic, messageBuffer) {
         const rawPayload = messageBuffer.toString('utf-8').trim();
         const now = new Date().toISOString();
         const db = (0, database_1.getDb)();
-        // Handle ACK messages (e.g. soundbox_dev/<imei>/ack, wegw/<imei>/ack, /ack, etc.)
-        const isAckTopic = topic.endsWith('/ack') || topic === '/ack' || topic.includes('/ack');
-        if (isAckTopic) {
-            console.log(`[MQTT ACK] Received ACK on topic ${topic}: ${rawPayload}`);
-            let ackJson = null;
-            try {
-                ackJson = JSON.parse(rawPayload);
-            }
-            catch {
-                ackJson = { raw: rawPayload };
-            }
+        // Parse JSON if available
+        let parsedJson = null;
+        try {
+            parsedJson = JSON.parse(rawPayload);
+        }
+        catch { }
+        // Handle OTA ACK & Progress messages (checks payload signature and topics)
+        const isOtaPacket = Boolean(parsedJson &&
+            (parsedJson.ota_type ||
+                parsedJson.jobId ||
+                parsedJson.job_id ||
+                parsedJson.topic === 'APP_OTA' ||
+                parsedJson.topic === 'DF_OTA' ||
+                parsedJson.status === 'IN_PROGRESS' ||
+                parsedJson.status === 'SUCCEEDED' ||
+                parsedJson.status === 'FAILED')) ||
+            topic.endsWith('/ack') ||
+            topic === '/ack' ||
+            topic.includes('/ack') ||
+            topic.includes('/ota') ||
+            topic.includes('APP_OTA') ||
+            topic.includes('DF_OTA');
+        if (isOtaPacket && !topic.endsWith('/metrics')) {
+            console.log(`[MQTT OTA ACK] Received on topic "${topic}": ${rawPayload}`);
+            const ackJson = parsedJson || { raw: rawPayload };
             let imeiFromTopic;
-            const match = topic.match(/^(?:soundbox_dev|wegw)\/([^/]+)\/(?:ota\/)?ack$/);
+            const match = topic.match(/^(?:soundbox_dev|wegw)\/([^/]+)/);
             if (match)
                 imeiFromTopic = match[1];
-            const deviceId = ackJson.imei || ackJson.deviceId || imeiFromTopic;
-            const jobId = ackJson.jobId || ackJson.job_id || ackJson.id;
+            const deviceId = ackJson.imei_number ||
+                ackJson.imei ||
+                ackJson.deviceId ||
+                ackJson.device_id ||
+                imeiFromTopic ||
+                '';
+            const jobId = ackJson.jobId || ackJson.job_id || ackJson.id || '';
+            const status = ackJson.status || 'acknowledged';
             try {
                 if (typeof db.updateOtaJobAck === 'function') {
                     db.updateOtaJobAck(jobId, deviceId, ackJson);
@@ -227,6 +247,7 @@ function handleMqttMessage(topic, messageBuffer) {
                     topic,
                     deviceId,
                     jobId,
+                    status,
                     payload: ackJson,
                     raw: rawPayload,
                     timestamp: now,
@@ -547,11 +568,26 @@ function initMqttService(broadcast) {
                 TOPIC_SOUNDBOX_METRICS,
                 TOPIC_SOUNDBOX_ACK,
                 TOPIC_SOUNDBOX_OTA_ACK,
+                'soundbox_dev/+/ota',
+                'soundbox_dev/+/ota/ack',
+                'soundbox_dev/+/command/ack',
+                'soundbox_dev/+/APP_OTA',
+                'soundbox_dev/+/DF_OTA',
+                'soundbox_dev/+/status',
+                'soundbox_dev/+/response',
                 TOPIC_WEGW_ACK,
                 TOPIC_WEGW_OTA_ACK,
                 TOPIC_LEGACY_GPS_UPLINK,
+                'wegw/+/ota',
+                'wegw/+/APP_OTA',
+                'wegw/+/DF_OTA',
+                'APP_OTA',
+                'DF_OTA',
+                '+/APP_OTA',
+                '+/DF_OTA',
                 TOPIC_ROOT_ACK,
                 TOPIC_PLUS_ACK,
+                '+/+/ack',
             ];
             mqttClient?.subscribe(topicsToSubscribe, { qos: 1 }, (err) => {
                 if (err)
@@ -581,10 +617,14 @@ async function publishOtaPayload(imei, otaPayload) {
         }
         const jsonStr = typeof otaPayload === 'string' ? otaPayload : JSON.stringify(otaPayload);
         // Publish to downlink topics
+        const typeStr = otaPayload?.ota_type || 'APP_OTA';
         const topics = [
             `${TOPIC_SOUNDBOX_CMD_PREFIX}${imei}/command`,
             `${TOPIC_SOUNDBOX_CMD_PREFIX}${imei}/ota`,
+            `${TOPIC_SOUNDBOX_CMD_PREFIX}${imei}/${typeStr}`,
             `wegw/${imei}/ota`,
+            `wegw/${imei}/${typeStr}`,
+            `${typeStr}`,
         ];
         let completed = 0;
         let anySuccess = false;

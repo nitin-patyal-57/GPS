@@ -46,7 +46,7 @@ export interface OtaJobRecord {
   fileSha256: string
   version: string
   payload: string
-  status: 'pending' | 'sent' | 'acknowledged' | 'failed'
+  status: 'pending' | 'sent' | 'acknowledged' | 'in_progress' | 'succeeded' | 'failed'
   sentAt: string
   ackedAt?: string
   ackPayload?: string
@@ -134,12 +134,25 @@ export class GpsStore {
   updateOtaJobAck(jobId: string, deviceId?: string, ackData?: any): boolean {
     const now = new Date().toISOString()
     const ackPayloadStr = typeof ackData === 'string' ? ackData : JSON.stringify(ackData || {})
+    const rawStatus = (ackData?.status || '').toUpperCase()
+    const derivedStatus: OtaJobRecord['status'] =
+      rawStatus === 'SUCCEEDED'
+        ? 'succeeded'
+        : rawStatus === 'IN_PROGRESS'
+        ? 'in_progress'
+        : rawStatus === 'FAILED'
+        ? 'failed'
+        : 'acknowledged'
+
     let updated = false
     for (const job of this.otaJobs) {
-      const matchDevice = deviceId ? job.deviceId === deviceId : false
-      const matchJob = jobId ? job.jobId === jobId : true
-      if (matchDevice && matchJob) {
-        job.status = 'acknowledged'
+      const matchDevice = deviceId
+        ? job.deviceId === deviceId || job.deviceId.endsWith(deviceId) || deviceId.endsWith(job.deviceId)
+        : false
+      const matchJob = jobId ? job.jobId.toLowerCase() === jobId.toLowerCase() : false
+
+      if (matchJob || matchDevice) {
+        job.status = derivedStatus
         job.ackedAt = now
         job.ackPayload = ackPayloadStr
         updated = true

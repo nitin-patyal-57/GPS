@@ -18,7 +18,7 @@ export interface OtaJobRecord {
   fileSha256: string
   version: string
   payload: string
-  status: 'pending' | 'sent' | 'acknowledged' | 'failed'
+  status: 'pending' | 'sent' | 'acknowledged' | 'in_progress' | 'succeeded' | 'failed'
   sentAt: string
   ackedAt?: string
   ackPayload?: string

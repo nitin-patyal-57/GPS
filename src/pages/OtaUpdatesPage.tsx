@@ -85,17 +85,29 @@ export default function OtaUpdatesPage() {
     const unsubscribe = realtimeGpsService.subscribeToOta((data: any) => {
       console.log('[OTA Page] WebSocket Event received:', data)
       if (data.event === 'ota_ack') {
-        const { jobId: ackJobId, deviceId: ackImei, payload } = data
+        const { jobId: ackJobId, deviceId: ackImei, payload, status: incomingStatus } = data
+        const rawStatus = (payload?.status || incomingStatus || '').toUpperCase()
+        const derivedStatus: OtaJobRecord['status'] =
+          rawStatus === 'SUCCEEDED'
+            ? 'succeeded'
+            : rawStatus === 'IN_PROGRESS'
+            ? 'in_progress'
+            : rawStatus === 'FAILED'
+            ? 'failed'
+            : 'acknowledged'
+
         setOtaJobs((prev) => {
           const next = [...prev]
           for (let i = 0; i < next.length; i++) {
-            // Strictly match the target device IMEI and Job ID
-            const sameDevice = ackImei ? next[i].deviceId === ackImei : false
-            const sameJob = ackJobId ? next[i].jobId === ackJobId : true
-            if (sameDevice && sameJob) {
+            const sameJob = ackJobId ? next[i].jobId.toLowerCase() === ackJobId.toLowerCase() : false
+            const sameDevice = ackImei
+              ? next[i].deviceId === ackImei || next[i].deviceId.endsWith(ackImei) || ackImei.endsWith(next[i].deviceId)
+              : false
+
+            if (sameJob || sameDevice) {
               next[i] = {
                 ...next[i],
-                status: 'acknowledged',
+                status: derivedStatus,
                 ackedAt: new Date().toISOString(),
                 ackPayload: typeof payload === 'string' ? payload : JSON.stringify(payload),
               }
@@ -811,7 +823,10 @@ export default function OtaUpdatesPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {otaJobs.map((job) => {
-                      const isAcked = job.status === 'acknowledged'
+                      const isSucceeded = job.status === 'succeeded'
+                      const isInProgress = job.status === 'in_progress'
+                      const isFailed = job.status === 'failed'
+                      const isAcked = isSucceeded || isInProgress || job.status === 'acknowledged'
 
                       return (
                         <tr
@@ -826,7 +841,7 @@ export default function OtaUpdatesPage() {
                           <td className="px-4 py-3">
                             <p className="font-mono font-bold text-slate-800 dark:text-slate-200">{job.deviceId}</p>
                             <p className="text-[10px] text-slate-400">
-                              Topic: soundbox_dev/{job.deviceId}/command
+                              Topic: soundbox_dev/{job.deviceId}/{job.otaType}
                             </p>
                           </td>
                           <td className="px-4 py-3">
@@ -844,7 +859,22 @@ export default function OtaUpdatesPage() {
                             </p>
                           </td>
                           <td className="px-4 py-3">
-                            {isAcked ? (
+                            {isSucceeded ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                                <span>SUCCEEDED</span>
+                              </span>
+                            ) : isInProgress ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/15 px-2.5 py-1 text-xs font-bold text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                                <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-500" />
+                                <span>IN_PROGRESS</span>
+                              </span>
+                            ) : isFailed ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-bold text-red-600 dark:text-red-400 border border-red-500/20">
+                                <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+                                <span>FAILED</span>
+                              </span>
+                            ) : isAcked ? (
                               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
                                 <span>ACK Received</span>
@@ -852,7 +882,7 @@ export default function OtaUpdatesPage() {
                             ) : (
                               <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-semibold text-amber-600 dark:text-amber-400 border border-amber-500/20">
                                 <Clock className="h-3.5 w-3.5 animate-spin text-amber-500" />
-                                <span>Waiting for /ack</span>
+                                <span>Waiting for ACK</span>
                               </span>
                             )}
                           </td>
