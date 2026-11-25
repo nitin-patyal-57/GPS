@@ -85,10 +85,7 @@ export default function GpsDetailPage() {
 
   const isMoving = (device.gps?.speedKmph || 0) > 1.5
 
-  const lastSeenDate = parseDateSafe(device.lastSeen)
-  const isMqttConnected =
-    device.status === 'online' &&
-    Boolean(lastSeenDate && Date.now() - lastSeenDate.getTime() < 15 * 60 * 1000)
+  const isMqttConnected = device.status === 'online'
 
   return (
     <div className="space-y-6">

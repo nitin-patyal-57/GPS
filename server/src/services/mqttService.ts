@@ -239,13 +239,6 @@ function handleMqttMessage(topic: string, messageBuffer: Buffer) {
         return
       }
 
-      // Whitelist check: only accept telemetry for devices registered in the database or baseline device
-      const existing = db.prepare('SELECT deviceId FROM devices WHERE deviceId = ?').get(imei)
-      if (!existing && imei !== '861185084122719') {
-        // Do not auto-register unknown soundbox devices on shared MQTT broker
-        return
-      }
-
       try {
         const json = JSON.parse(rawPayload)
         const deviceData = parseGpsMetrics(json, imei, now)
@@ -305,7 +298,6 @@ function handleMqttMessage(topic: string, messageBuffer: Buffer) {
       const imei = nmeaMatch[1]
       if (imei.startsWith('86750908') || imei === '867509082945058' || imei === '861185084200101') return
       const existing = db.prepare('SELECT * FROM devices WHERE deviceId = ?').get(imei) as any
-      if (!existing && imei !== '861185084122719') return
 
       try {
         const parsed = parseNmeaPayload(rawPayload)
