@@ -205,25 +205,60 @@ router.post('/ota/simulate-ack', (req, res) => {
     }
 
     const cleanOtaType = otaType === 'DF_OTA' ? 'DF_OTA' : otaType === 'APP_OTA' ? 'APP_OTA' : undefined
+    const cleanJobId = String(jobId || '').trim().toLowerCase()
+    const cleanDevId = String(deviceId || '').trim()
+
     const db = getDb()
     const now = new Date().toISOString()
     const allJobs = typeof db.getOtaJobs === 'function' ? db.getOtaJobs(500) : []
-    const targetJob = allJobs.find(
+
+    // 1. Exact match on both jobId & deviceId
+    let targetJob = allJobs.find(
       (j: any) =>
-        j.jobId.toLowerCase() === String(jobId).trim().toLowerCase() &&
-        (j.deviceId === String(deviceId).trim() || !deviceId) &&
+        j.jobId.toLowerCase() === cleanJobId &&
+        (j.deviceId === cleanDevId || j.deviceId.endsWith(cleanDevId) || cleanDevId.endsWith(j.deviceId)) &&
         (!cleanOtaType || j.otaType === cleanOtaType)
     )
 
+    // 2. Fallback to active/pending job for device
+    if (!targetJob && cleanDevId) {
+      targetJob = allJobs.find(
+        (j: any) =>
+          (j.deviceId === cleanDevId || j.deviceId.endsWith(cleanDevId) || cleanDevId.endsWith(j.deviceId)) &&
+          (!cleanOtaType || j.otaType === cleanOtaType) &&
+          (j.status === 'sent' || j.status === 'in_progress' || j.status === 'pending')
+      )
+    }
+
+    // 3. Fallback to any job for device and OTA type
+    if (!targetJob && cleanDevId) {
+      targetJob = allJobs.find(
+        (j: any) =>
+          (j.deviceId === cleanDevId || j.deviceId.endsWith(cleanDevId) || cleanDevId.endsWith(j.deviceId)) &&
+          (!cleanOtaType || j.otaType === cleanOtaType)
+      )
+    }
+
+    // 4. Fallback by jobId only
+    if (!targetJob && cleanJobId) {
+      targetJob = allJobs.find(
+        (j: any) =>
+          j.jobId.toLowerCase() === cleanJobId &&
+          (!cleanOtaType || j.otaType === cleanOtaType)
+      )
+    }
+
     const finalType = targetJob?.otaType || cleanOtaType || 'APP_OTA'
-    const ackStatus = String(status || 'SUCCEEDED').toUpperCase()
+    const finalJobId = targetJob?.jobId || jobId
+    const finalDevId = targetJob?.deviceId || cleanDevId
+    const ackStatus = String(status || 'SUCCEEDED').toUpperCase().trim().replace(/[\s-]+/g, '_')
     const ackPayload: any = {
       ota_type: finalType,
-      jobId,
+      jobId: finalJobId,
       url_address: targetJob?.urlAddress || '',
       status: ackStatus,
       topic: `${finalType}`,
-      imei_number: deviceId,
+      imei_number: finalDevId,
       timestamp: now,
     }
 
@@ -238,13 +273,13 @@ router.post('/ota/simulate-ack', (req, res) => {
     }
 
     if (typeof db.updateOtaJobAck === 'function') {
-      db.updateOtaJobAck(jobId, deviceId, ackPayload)
+      db.updateOtaJobAck(finalJobId, finalDevId, ackPayload)
     }
 
     broadcast('ota_ack', {
-      topic: `soundbox_dev/${deviceId}/ack`,
-      deviceId,
-      jobId,
+      topic: `soundbox_dev/${finalDevId}/ack`,
+      deviceId: finalDevId,
+      jobId: finalJobId,
       otaType: finalType,
       status: ackStatus,
       payload: ackPayload,

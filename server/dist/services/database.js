@@ -90,87 +90,126 @@ class GpsStore {
     updateOtaJobAck(jobId, deviceId, ackData) {
         const now = new Date().toISOString();
         const ackPayloadStr = typeof ackData === 'string' ? ackData : JSON.stringify(ackData || {});
-        const rawStatus = (ackData?.status || '').toUpperCase();
-        const derivedStatus = rawStatus === 'SUCCEEDED' || rawStatus === 'SUCCESS'
-            ? 'succeeded'
-            : rawStatus === 'IN_PROGRESS'
-                ? 'in_progress'
-                : rawStatus === 'FAILED'
-                    ? 'failed'
-                    : 'acknowledged';
+        // Normalize raw status safely
+        const rawStatus = String(ackData?.status || '')
+            .trim()
+            .toUpperCase()
+            .replace(/[\s-]+/g, '_');
+        let derivedStatus = 'acknowledged';
+        if (rawStatus === 'SUCCEEDED' ||
+            rawStatus === 'SUCCESS' ||
+            rawStatus === 'DONE' ||
+            rawStatus === 'COMPLETED' ||
+            rawStatus === 'OK') {
+            derivedStatus = 'succeeded';
+        }
+        else if (rawStatus === 'IN_PROGRESS' ||
+            rawStatus.includes('PROGRESS') ||
+            rawStatus.includes('DOWNLOADING') ||
+            rawStatus.includes('FLASHING') ||
+            rawStatus.includes('UPDATING') ||
+            rawStatus.includes('STARTED') ||
+            rawStatus.includes('RUNNING')) {
+            derivedStatus = 'in_progress';
+        }
+        else if (rawStatus === 'FAILED' ||
+            rawStatus.includes('FAIL') ||
+            rawStatus.includes('ERROR')) {
+            derivedStatus = 'failed';
+        }
         // Extract incoming OTA type if specified in payload or topic
-        const incomingOtaType = ackData?.ota_type === 'DF_OTA' || ackData?.ota_type === 'DFOTA' || ackData?.topic === 'DF_OTA'
+        const rawType = String(ackData?.ota_type || ackData?.type || ackData?.topic || '')
+            .trim()
+            .toUpperCase()
+            .replace(/[\s-]+/g, '_');
+        const incomingOtaType = rawType.includes('DF')
             ? 'DF_OTA'
-            : ackData?.ota_type === 'APP_OTA' || ackData?.topic === 'APP_OTA'
+            : rawType.includes('APP')
                 ? 'APP_OTA'
                 : undefined;
-        let updated = false;
-        for (const job of this.otaJobs) {
-            // Must match OTA type: APP_OTA ACK will NEVER touch DF_OTA job, and vice-versa!
-            if (incomingOtaType && job.otaType !== incomingOtaType) {
-                continue;
-            }
-            const matchDevice = deviceId
-                ? job.deviceId === deviceId || job.deviceId.endsWith(deviceId) || deviceId.endsWith(job.deviceId)
-                : false;
-            const matchJob = jobId ? job.jobId.toLowerCase() === jobId.toLowerCase() : false;
-            let isMatch = false;
-            if (jobId && deviceId) {
-                // Both jobId and deviceId provided: strictly match both
-                isMatch = matchJob && matchDevice;
-            }
-            else if (jobId) {
-                // Only jobId provided
-                isMatch = matchJob;
-            }
-            else if (deviceId) {
-                // Fallback when device sends bare ACK without jobId: match latest device job only
-                isMatch = matchDevice;
-            }
-            if (isMatch) {
-                job.status = derivedStatus;
-                job.ackedAt = now;
-                job.ackPayload = ackPayloadStr;
-                if (!Array.isArray(job.ackHistory)) {
-                    job.ackHistory = [];
-                }
-                job.ackHistory.push({
-                    status: derivedStatus,
-                    timestamp: now,
-                    payload: typeof ackData === 'string' ? JSON.parse(ackData) : ackData,
-                });
-                updated = true;
-                // When OTA succeeds, update the corresponding independent version in device record!
-                if (derivedStatus === 'succeeded' && job.deviceId) {
-                    const devRec = this.devices.get(job.deviceId);
-                    if (devRec && devRec.data) {
-                        try {
-                            const parsedData = JSON.parse(devRec.data);
-                            if (!parsedData.device)
-                                parsedData.device = {};
-                            if (job.otaType === 'APP_OTA') {
-                                parsedData.device.appVersion = job.appVersion || job.version;
-                            }
-                            else if (job.otaType === 'DF_OTA') {
-                                parsedData.device.sdkVersion = job.sdkVersion || job.version;
-                                if (job.appVersion) {
-                                    parsedData.device.appVersion = job.appVersion;
-                                }
-                            }
-                            devRec.data = JSON.stringify(parsedData);
-                            devRec.updatedAt = now;
-                            this.devices.set(job.deviceId, devRec);
-                        }
-                        catch { }
-                    }
-                }
-                // Crucial: Only update this specific targeted job, never touch previous historical jobs!
-                break;
-            }
+        const cleanJobId = String(jobId || ackData?.jobId || ackData?.job_id || ackData?.id || '').trim().toLowerCase();
+        const cleanDeviceId = String(deviceId || ackData?.imei_number || ackData?.imei || ackData?.deviceId || ackData?.device_id || '').trim();
+        // Robust multi-stage matching:
+        // Stage 1: Try exact match on both jobId AND deviceId (respecting incomingOtaType)
+        let targetIndex = -1;
+        if (cleanJobId && cleanDeviceId) {
+            targetIndex = this.otaJobs.findIndex((job) => {
+                if (incomingOtaType && job.otaType !== incomingOtaType)
+                    return false;
+                const matchJob = job.jobId.toLowerCase() === cleanJobId;
+                const matchDev = job.deviceId === cleanDeviceId || job.deviceId.endsWith(cleanDeviceId) || cleanDeviceId.endsWith(job.deviceId);
+                return matchJob && matchDev;
+            });
         }
-        if (updated)
+        // Stage 2: If no exact pair match (e.g. device/user sends generic jobId like "J1" or firmware hardcoded jobId),
+        // match the most recent ACTIVE/PENDING job for this device and OTA type!
+        if (targetIndex === -1 && cleanDeviceId) {
+            targetIndex = this.otaJobs.findIndex((job) => {
+                if (incomingOtaType && job.otaType !== incomingOtaType)
+                    return false;
+                const matchDev = job.deviceId === cleanDeviceId || job.deviceId.endsWith(cleanDeviceId) || cleanDeviceId.endsWith(job.deviceId);
+                if (!matchDev)
+                    return false;
+                return job.status === 'sent' || job.status === 'in_progress' || job.status === 'pending';
+            });
+        }
+        // Stage 3: Fallback to any most recent job for this device (and OTA type)
+        if (targetIndex === -1 && cleanDeviceId) {
+            targetIndex = this.otaJobs.findIndex((job) => {
+                if (incomingOtaType && job.otaType !== incomingOtaType)
+                    return false;
+                return job.deviceId === cleanDeviceId || job.deviceId.endsWith(cleanDeviceId) || cleanDeviceId.endsWith(job.deviceId);
+            });
+        }
+        // Stage 4: Fallback to match by jobId only if device was not matched
+        if (targetIndex === -1 && cleanJobId) {
+            targetIndex = this.otaJobs.findIndex((job) => {
+                if (incomingOtaType && job.otaType !== incomingOtaType)
+                    return false;
+                return job.jobId.toLowerCase() === cleanJobId;
+            });
+        }
+        if (targetIndex !== -1) {
+            const job = this.otaJobs[targetIndex];
+            job.status = derivedStatus;
+            job.ackedAt = now;
+            job.ackPayload = ackPayloadStr;
+            if (!Array.isArray(job.ackHistory)) {
+                job.ackHistory = [];
+            }
+            job.ackHistory.push({
+                status: derivedStatus,
+                timestamp: now,
+                payload: typeof ackData === 'string' ? JSON.parse(ackData) : ackData,
+            });
+            // When OTA succeeds, update the corresponding independent version in device record!
+            if (derivedStatus === 'succeeded' && job.deviceId) {
+                const devRec = this.devices.get(job.deviceId);
+                if (devRec && devRec.data) {
+                    try {
+                        const parsedData = JSON.parse(devRec.data);
+                        if (!parsedData.device)
+                            parsedData.device = {};
+                        if (job.otaType === 'APP_OTA') {
+                            parsedData.device.appVersion = job.appVersion || job.version;
+                        }
+                        else if (job.otaType === 'DF_OTA') {
+                            parsedData.device.sdkVersion = job.sdkVersion || job.version;
+                            if (job.appVersion) {
+                                parsedData.device.appVersion = job.appVersion;
+                            }
+                        }
+                        devRec.data = JSON.stringify(parsedData);
+                        devRec.updatedAt = now;
+                        this.devices.set(job.deviceId, devRec);
+                    }
+                    catch { }
+                }
+            }
             this.saveToFile();
-        return updated;
+            return true;
+        }
+        return false;
     }
     getOtaJobs(limit = 100) {
         return this.otaJobs.slice(0, limit);

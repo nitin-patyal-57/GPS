@@ -198,22 +198,38 @@ function handleMqttMessage(topic: string, messageBuffer: Buffer) {
       parsedJson = JSON.parse(rawPayload)
     } catch {}
 
-    // A real device ACK MUST be on an /ack topic OR have an explicit device status ("IN_PROGRESS", "SUCCEEDED", etc.)
+    // A real device ACK MUST be on an /ack or /status or /response topic OR have an explicit device status ("IN_PROGRESS", "SUCCEEDED", etc.)
     // Downlink commands (which only contain url_address/file_sha256 without status on non-ack topics) are strictly ignored!
     const isAckTopic =
       topic.endsWith('/ack') ||
       topic === '/ack' ||
-      topic.includes('/ack')
+      topic.includes('/ack') ||
+      topic.endsWith('/status') ||
+      topic.endsWith('/response')
+
+    const cleanRawStatus = String(parsedJson?.status || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[\s-]+/g, '_')
 
     const hasDeviceStatus = Boolean(
       parsedJson &&
-        parsedJson.status &&
-        (parsedJson.status === 'IN_PROGRESS' ||
-          parsedJson.status === 'SUCCEEDED' ||
-          parsedJson.status === 'FAILED' ||
-          parsedJson.status === 'SUCCESS' ||
-          parsedJson.status === 'FAILED_SHA' ||
-          parsedJson.status === 'FAILED_DOWNLOAD')
+        cleanRawStatus &&
+        (cleanRawStatus === 'IN_PROGRESS' ||
+          cleanRawStatus.includes('PROGRESS') ||
+          cleanRawStatus.includes('DOWNLOADING') ||
+          cleanRawStatus.includes('FLASHING') ||
+          cleanRawStatus.includes('UPDATING') ||
+          cleanRawStatus.includes('STARTED') ||
+          cleanRawStatus.includes('RUNNING') ||
+          cleanRawStatus === 'SUCCEEDED' ||
+          cleanRawStatus === 'SUCCESS' ||
+          cleanRawStatus === 'DONE' ||
+          cleanRawStatus === 'COMPLETED' ||
+          cleanRawStatus === 'OK' ||
+          cleanRawStatus === 'FAILED' ||
+          cleanRawStatus.includes('FAIL') ||
+          cleanRawStatus.includes('ERROR'))
     )
 
     const isDeviceAck = (isAckTopic || hasDeviceStatus) && !topic.endsWith('/metrics')
@@ -226,15 +242,18 @@ function handleMqttMessage(topic: string, messageBuffer: Buffer) {
       const match = topic.match(/^(?:soundbox_dev|wegw)\/([^/]+)/)
       if (match) imeiFromTopic = match[1]
 
-      const deviceId =
+      const deviceId = String(
         ackJson.imei_number ||
         ackJson.imei ||
         ackJson.deviceId ||
         ackJson.device_id ||
         imeiFromTopic ||
         ''
-      const jobId = ackJson.jobId || ackJson.job_id || ackJson.id || ''
-      const status = ackJson.status || 'acknowledged'
+      ).trim()
+      const jobId = String(ackJson.jobId || ackJson.job_id || ackJson.id || '').trim()
+      const rawOtaType = String(ackJson.ota_type || ackJson.type || ackJson.topic || '').trim().toUpperCase()
+      const otaType = rawOtaType.includes('DF') ? 'DF_OTA' : rawOtaType.includes('APP') ? 'APP_OTA' : undefined
+      const status = cleanRawStatus || 'acknowledged'
 
       try {
         if (typeof db.updateOtaJobAck === 'function') {
@@ -249,6 +268,7 @@ function handleMqttMessage(topic: string, messageBuffer: Buffer) {
           topic,
           deviceId,
           jobId,
+          otaType,
           status,
           payload: ackJson,
           raw: rawPayload,
@@ -615,11 +635,15 @@ export function initMqttService(broadcast: (event: string, data: unknown) => voi
         TOPIC_SOUNDBOX_ACK,
         TOPIC_SOUNDBOX_OTA_ACK,
         'soundbox_dev/+/command/ack',
+        'soundbox_dev/+/status',
+        'soundbox_dev/+/response',
         TOPIC_WEGW_ACK,
         TOPIC_WEGW_OTA_ACK,
+        'wegw/+/status',
         TOPIC_LEGACY_GPS_UPLINK,
         TOPIC_ROOT_ACK,
         TOPIC_PLUS_ACK,
+        '+/+/ack',
       ]
 
       topicsToSubscribe.forEach((t) => {

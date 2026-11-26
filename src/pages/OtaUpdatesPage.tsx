@@ -96,62 +96,107 @@ export default function OtaUpdatesPage() {
     const unsubscribe = realtimeGpsService.subscribeToOta((data: any) => {
       console.log('[OTA Page] WebSocket Event received:', data)
       if (data.event === 'ota_ack') {
-        const { jobId: ackJobId, deviceId: ackImei, payload, status: incomingStatus } = data
-        const rawStatus = (payload?.status || incomingStatus || '').toUpperCase()
-        const derivedStatus: OtaJobRecord['status'] =
-          rawStatus === 'SUCCEEDED'
-            ? 'succeeded'
-            : rawStatus === 'IN_PROGRESS'
-            ? 'in_progress'
-            : rawStatus === 'FAILED'
-            ? 'failed'
-            : 'acknowledged'
+        const { jobId: ackJobId, deviceId: ackImei, payload, status: incomingStatus, otaType: eventOtaType } = data
+        const rawStatus = String(payload?.status || incomingStatus || '')
+          .trim()
+          .toUpperCase()
+          .replace(/[\s-]+/g, '_')
 
-        const incomingOtaType =
-          payload?.ota_type === 'DF_OTA' || payload?.topic === 'DF_OTA' || data.otaType === 'DF_OTA'
+        let derivedStatus: OtaJobRecord['status'] = 'acknowledged'
+        if (
+          rawStatus === 'SUCCEEDED' ||
+          rawStatus === 'SUCCESS' ||
+          rawStatus === 'DONE' ||
+          rawStatus === 'COMPLETED' ||
+          rawStatus === 'OK'
+        ) {
+          derivedStatus = 'succeeded'
+        } else if (
+          rawStatus === 'IN_PROGRESS' ||
+          rawStatus.includes('PROGRESS') ||
+          rawStatus.includes('DOWNLOADING') ||
+          rawStatus.includes('FLASHING') ||
+          rawStatus.includes('UPDATING') ||
+          rawStatus.includes('STARTED') ||
+          rawStatus.includes('RUNNING')
+        ) {
+          derivedStatus = 'in_progress'
+        } else if (
+          rawStatus === 'FAILED' ||
+          rawStatus.includes('FAIL') ||
+          rawStatus.includes('ERROR')
+        ) {
+          derivedStatus = 'failed'
+        }
+
+        const rawType = String(payload?.ota_type || payload?.type || payload?.topic || eventOtaType || data.otaType || '')
+          .trim()
+          .toUpperCase()
+          .replace(/[\s-]+/g, '_')
+        const incomingOtaType: 'APP_OTA' | 'DF_OTA' | undefined =
+          rawType.includes('DF')
             ? 'DF_OTA'
-            : payload?.ota_type === 'APP_OTA' || payload?.topic === 'APP_OTA' || data.otaType === 'APP_OTA'
+            : rawType.includes('APP')
             ? 'APP_OTA'
             : undefined
 
+        const cleanJobId = String(ackJobId || payload?.jobId || payload?.job_id || '').trim().toLowerCase()
+        const cleanImei = String(ackImei || payload?.imei_number || payload?.imei || payload?.deviceId || '').trim()
+
         setOtaJobs((prev) => {
           const next = [...prev]
-          for (let i = 0; i < next.length; i++) {
-            // Strictly match OTA type if incoming payload specifies it!
-            if (incomingOtaType && next[i].otaType !== incomingOtaType) {
-              continue
+
+          // Stage 1: Try exact match on both jobId AND deviceId (respecting incomingOtaType)
+          let matchIndex = -1
+          if (cleanJobId && cleanImei) {
+            matchIndex = next.findIndex((job) => {
+              if (incomingOtaType && job.otaType !== incomingOtaType) return false
+              const matchJob = job.jobId.toLowerCase() === cleanJobId
+              const matchDev = job.deviceId === cleanImei || job.deviceId.endsWith(cleanImei) || cleanImei.endsWith(job.deviceId)
+              return matchJob && matchDev
+            })
+          }
+
+          // Stage 2: Fallback to matching the most recent active/pending job for this device and OTA type
+          if (matchIndex === -1 && cleanImei) {
+            matchIndex = next.findIndex((job) => {
+              if (incomingOtaType && job.otaType !== incomingOtaType) return false
+              const matchDev = job.deviceId === cleanImei || job.deviceId.endsWith(cleanImei) || cleanImei.endsWith(job.deviceId)
+              if (!matchDev) return false
+              const curStatus = String(job.status || '').toLowerCase()
+              return curStatus === 'sent' || curStatus === 'in_progress' || curStatus === 'pending'
+            })
+          }
+
+          // Stage 3: Fallback to any job for this device and OTA type
+          if (matchIndex === -1 && cleanImei) {
+            matchIndex = next.findIndex((job) => {
+              if (incomingOtaType && job.otaType !== incomingOtaType) return false
+              return job.deviceId === cleanImei || job.deviceId.endsWith(cleanImei) || cleanImei.endsWith(job.deviceId)
+            })
+          }
+
+          // Stage 4: Fallback to match by jobId only
+          if (matchIndex === -1 && cleanJobId) {
+            matchIndex = next.findIndex((job) => {
+              if (incomingOtaType && job.otaType !== incomingOtaType) return false
+              return job.jobId.toLowerCase() === cleanJobId
+            })
+          }
+
+          if (matchIndex !== -1) {
+            const currentHistory = next[matchIndex].ackHistory || []
+            const newEntry = {
+              status: derivedStatus,
+              timestamp: new Date().toISOString(),
+              payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
             }
-
-            const sameJob = ackJobId ? next[i].jobId.toLowerCase() === ackJobId.toLowerCase() : false
-            const sameDevice = ackImei
-              ? next[i].deviceId === ackImei || next[i].deviceId.endsWith(ackImei) || ackImei.endsWith(next[i].deviceId)
-              : false
-
-            let isMatch = false
-            if (ackJobId && ackImei) {
-              isMatch = sameJob && sameDevice
-            } else if (ackJobId) {
-              isMatch = sameJob
-            } else if (ackImei) {
-              isMatch = sameDevice
-            }
-
-            if (isMatch) {
-              const currentHistory = next[i].ackHistory || []
-              const newEntry = {
-                status: derivedStatus,
-                timestamp: new Date().toISOString(),
-                payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
-              }
-              next[i] = {
-                ...next[i],
-                status: derivedStatus,
-                ackedAt: new Date().toISOString(),
-                ackPayload: typeof payload === 'string' ? payload : JSON.stringify(payload),
-                ackHistory: [...currentHistory, newEntry],
-              }
-              // Only update this specific targeted job!
-              break
+            next[matchIndex] = {
+              ...next[matchIndex],
+              status: derivedStatus,
+              ackedAt: new Date().toISOString(),
+              ackPayload: typeof payload === 'string' ? payload : JSON.stringify(payload),
+              ackHistory: [...currentHistory, newEntry],
             }
           }
           return next
@@ -331,8 +376,8 @@ export default function OtaUpdatesPage() {
           message: `Successfully dispatched ${res.count} ${otaType} payloads for Job ID ${res.jobId || autoJobId}. Now monitoring for acknowledgments on /ack!`,
         })
         await loadJobs()
-        // Switch to history/monitor tab after 1.5 seconds
-        setTimeout(() => setActiveTab('history'), 1500)
+        // Switch immediately to history/monitor tab so user sees the newly created job
+        setActiveTab('history')
       } else {
         setDeployResult({ success: false, message: res.error || 'Failed to dispatch OTA update.' })
       }
@@ -950,10 +995,11 @@ export default function OtaUpdatesPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {displayedJobs.map((job) => {
-                      const isSucceeded = job.status === 'succeeded'
-                      const isInProgress = job.status === 'in_progress'
-                      const isFailed = job.status === 'failed'
-                      const isAcked = isSucceeded || isInProgress || job.status === 'acknowledged'
+                      const s = String(job.status || '').toLowerCase().replace(/[\s-]+/g, '_')
+                      const isSucceeded = s === 'succeeded' || s === 'success' || s === 'done' || s === 'completed'
+                      const isInProgress = s === 'in_progress' || s.includes('progress') || s.includes('downloading') || s.includes('flashing') || s.includes('updating') || s.includes('running')
+                      const isFailed = s === 'failed' || s.includes('fail') || s.includes('error')
+                      const isAcked = isSucceeded || isInProgress || s === 'acknowledged'
 
                       return (
                         <tr
@@ -1059,12 +1105,12 @@ export default function OtaUpdatesPage() {
                                   handleSimulateAck(
                                     job.jobId,
                                     job.deviceId,
-                                    job.status === 'in_progress' ? 'SUCCEEDED' : 'IN_PROGRESS',
+                                    isInProgress ? 'SUCCEEDED' : 'IN_PROGRESS',
                                     job.otaType
                                   )
                                 }
                                 title={`Simulate ACK for ${job.jobId} (${
-                                  job.status === 'in_progress' ? 'Send SUCCEEDED' : 'Send IN_PROGRESS'
+                                  isInProgress ? 'Send SUCCEEDED' : 'Send IN_PROGRESS'
                                 })`}
                                 className="rounded-lg bg-slate-100 hover:bg-emerald-500 hover:text-white dark:bg-slate-800 dark:hover:bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition flex items-center gap-1 shadow-2xs cursor-pointer"
                               >
