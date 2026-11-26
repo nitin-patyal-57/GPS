@@ -55,7 +55,7 @@ router.post('/ota/deploy', async (req, res) => {
             // Publish to MQTT
             await (0, mqttService_1.publishOtaPayload)(imei, payloadObj);
             const record = {
-                id: `${cleanJobId}_${imei}`,
+                id: `${cleanType}_${cleanJobId}_${imei}`,
                 jobId: cleanJobId,
                 deviceId: imei,
                 otaType: cleanType,
@@ -163,29 +163,32 @@ router.get('/ota/jobs', (req, res) => {
  */
 router.post('/ota/simulate-ack', (req, res) => {
     try {
-        const { jobId, deviceId, status = 'SUCCEEDED', message = 'Firmware downloaded and verified' } = req.body;
+        const { jobId, deviceId, otaType, status = 'SUCCEEDED', message = 'Firmware downloaded and verified' } = req.body;
         if (!jobId || !deviceId) {
             return res.status(400).json({ error: 'jobId and deviceId are required' });
         }
+        const cleanOtaType = otaType === 'DF_OTA' ? 'DF_OTA' : otaType === 'APP_OTA' ? 'APP_OTA' : undefined;
         const db = (0, database_1.getDb)();
         const now = new Date().toISOString();
         const allJobs = typeof db.getOtaJobs === 'function' ? db.getOtaJobs(500) : [];
         const targetJob = allJobs.find((j) => j.jobId.toLowerCase() === String(jobId).trim().toLowerCase() &&
-            (j.deviceId === String(deviceId).trim() || !deviceId));
+            (j.deviceId === String(deviceId).trim() || !deviceId) &&
+            (!cleanOtaType || j.otaType === cleanOtaType));
+        const finalType = targetJob?.otaType || cleanOtaType || 'APP_OTA';
         const ackStatus = String(status || 'SUCCEEDED').toUpperCase();
         const ackPayload = {
-            ota_type: targetJob?.otaType || 'APP_OTA',
+            ota_type: finalType,
             jobId,
             url_address: targetJob?.urlAddress || '',
             status: ackStatus,
-            topic: `${targetJob?.otaType || 'APP_OTA'}`,
+            topic: `${finalType}`,
             imei_number: deviceId,
             timestamp: now,
         };
-        if (targetJob?.otaType === 'APP_OTA') {
-            if (targetJob.fileSha256)
+        if (finalType === 'APP_OTA') {
+            if (targetJob?.fileSha256)
                 ackPayload.file_sha256 = targetJob.fileSha256;
-            ackPayload.app_v = targetJob.version || '1.0.0';
+            ackPayload.app_v = targetJob?.version || '1.0.0';
         }
         else {
             ackPayload.sdk_v = targetJob?.version || '1.0.0';
@@ -197,6 +200,7 @@ router.post('/ota/simulate-ack', (req, res) => {
             topic: `soundbox_dev/${deviceId}/ack`,
             deviceId,
             jobId,
+            otaType: finalType,
             status: ackStatus,
             payload: ackPayload,
             raw: JSON.stringify(ackPayload),

@@ -59,7 +59,7 @@ export default function OtaUpdatesPage() {
 
   // OTA Form Configuration
   const [otaType, setOtaType] = useState<OtaType>('APP_OTA')
-  const [jobId, setJobId] = useState(() => `J${Math.floor(100 + Math.random() * 900)}`)
+  const [jobId, setJobId] = useState(() => `J_APP_${Math.floor(100 + Math.random() * 900)}`)
   const [urlAddress, setUrlAddress] = useState('https://firmware.gw1ns.io/builds/customer_app_v1.0.3.bin')
   const [version, setVersion] = useState('WMZ_DEV_1.0.3')
   const [fileSha256, setFileSha256] = useState('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')
@@ -72,6 +72,14 @@ export default function OtaUpdatesPage() {
   const [otaJobs, setOtaJobs] = useState<OtaJobRecord[]>([])
   const [copiedPayload, setCopiedPayload] = useState(false)
   const [selectedJobForModal, setSelectedJobForModal] = useState<OtaJobRecord | null>(null)
+  const [historyTypeFilter, setHistoryTypeFilter] = useState<'all' | 'APP_OTA' | 'DF_OTA'>('all')
+
+  const appOtaCount = useMemo(() => otaJobs.filter((j) => j.otaType === 'APP_OTA').length, [otaJobs])
+  const dfOtaCount = useMemo(() => otaJobs.filter((j) => j.otaType === 'DF_OTA').length, [otaJobs])
+  const displayedJobs = useMemo(() => {
+    if (historyTypeFilter === 'all') return otaJobs
+    return otaJobs.filter((j) => j.otaType === historyTypeFilter)
+  }, [otaJobs, historyTypeFilter])
 
   // Load existing OTA job history
   const loadJobs = useCallback(async () => {
@@ -99,9 +107,21 @@ export default function OtaUpdatesPage() {
             ? 'failed'
             : 'acknowledged'
 
+        const incomingOtaType =
+          payload?.ota_type === 'DF_OTA' || payload?.topic === 'DF_OTA' || data.otaType === 'DF_OTA'
+            ? 'DF_OTA'
+            : payload?.ota_type === 'APP_OTA' || payload?.topic === 'APP_OTA' || data.otaType === 'APP_OTA'
+            ? 'APP_OTA'
+            : undefined
+
         setOtaJobs((prev) => {
           const next = [...prev]
           for (let i = 0; i < next.length; i++) {
+            // Strictly match OTA type if incoming payload specifies it!
+            if (incomingOtaType && next[i].otaType !== incomingOtaType) {
+              continue
+            }
+
             const sameJob = ackJobId ? next[i].jobId.toLowerCase() === ackJobId.toLowerCase() : false
             const sameDevice = ackImei
               ? next[i].deviceId === ackImei || next[i].deviceId.endsWith(ackImei) || ackImei.endsWith(next[i].deviceId)
@@ -195,15 +215,17 @@ export default function OtaUpdatesPage() {
     setSelectedIds(new Set())
   }
 
-  // Pre-fill version templates when switching OTA type
+  // Pre-fill version templates and type-specific Job ID when switching OTA type
   const handleTypeChange = (type: OtaType) => {
     setOtaType(type)
     if (type === 'APP_OTA') {
       setUrlAddress('https://firmware.gw1ns.io/builds/customer_app_v1.0.3.bin')
       setVersion('WMZ_DEV_1.0.3')
+      setJobId(`J_APP_${Math.floor(100 + Math.random() * 900)}`)
     } else {
       setUrlAddress('https://firmware.gw1ns.io/patches/system_patch_v2.0.1.bin')
       setVersion('WM_SDK_C_261009')
+      setJobId(`J_DF_${Math.floor(100 + Math.random() * 900)}`)
     }
   }
 
@@ -301,7 +323,11 @@ export default function OtaUpdatesPage() {
         // Switch to history/monitor tab after 1.5 seconds
         setTimeout(() => setActiveTab('history'), 1500)
         // Refresh Job ID for next deployment
-        setJobId(`J${Math.floor(100 + Math.random() * 900)}`)
+        setJobId(
+          otaType === 'APP_OTA'
+            ? `J_APP_${Math.floor(100 + Math.random() * 900)}`
+            : `J_DF_${Math.floor(100 + Math.random() * 900)}`
+        )
       } else {
         setDeployResult({ success: false, message: res.error || 'Failed to dispatch OTA update.' })
       }
@@ -312,8 +338,13 @@ export default function OtaUpdatesPage() {
     }
   }
 
-  const handleSimulateAck = async (jId: string, dId: string, status: string = 'SUCCEEDED') => {
-    await otaService.simulateAck(jId, dId, status)
+  const handleSimulateAck = async (
+    jId: string,
+    dId: string,
+    status: string = 'SUCCEEDED',
+    type?: OtaType
+  ) => {
+    await otaService.simulateAck(jId, dId, status, type)
     await loadJobs()
   }
 
@@ -649,7 +680,13 @@ export default function OtaUpdatesPage() {
                   </label>
                   <button
                     type="button"
-                    onClick={() => setJobId(`J${Math.floor(100 + Math.random() * 900)}`)}
+                    onClick={() =>
+                      setJobId(
+                        otaType === 'APP_OTA'
+                          ? `J_APP_${Math.floor(100 + Math.random() * 900)}`
+                          : `J_DF_${Math.floor(100 + Math.random() * 900)}`
+                      )
+                    }
                     className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
                   >
                     <RefreshCw className="h-3 w-3" /> Auto-generate
@@ -808,10 +845,48 @@ export default function OtaUpdatesPage() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center rounded-lg bg-slate-100 p-0.5 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setHistoryTypeFilter('all')}
+                    className={`rounded-md px-2.5 py-1 font-semibold transition cursor-pointer ${
+                      historyTypeFilter === 'all'
+                        ? 'bg-white text-slate-900 shadow-2xs dark:bg-slate-700 dark:text-slate-100'
+                        : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    All ({otaJobs.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHistoryTypeFilter('APP_OTA')}
+                    className={`rounded-md px-2.5 py-1 font-semibold transition flex items-center gap-1 cursor-pointer ${
+                      historyTypeFilter === 'APP_OTA'
+                        ? 'bg-emerald-500 text-white shadow-2xs'
+                        : 'text-emerald-600 hover:text-emerald-700 dark:text-emerald-400'
+                    }`}
+                  >
+                    <span>APP_OTA</span>
+                    <span className="text-[10px] opacity-80">({appOtaCount})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHistoryTypeFilter('DF_OTA')}
+                    className={`rounded-md px-2.5 py-1 font-semibold transition flex items-center gap-1 cursor-pointer ${
+                      historyTypeFilter === 'DF_OTA'
+                        ? 'bg-purple-600 text-white shadow-2xs'
+                        : 'text-purple-600 hover:text-purple-700 dark:text-purple-400'
+                    }`}
+                  >
+                    <span>DF_OTA</span>
+                    <span className="text-[10px] opacity-80">({dfOtaCount})</span>
+                  </button>
+                </div>
+
                 <button
                   onClick={loadJobs}
-                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
                   <span>Refresh</span>
@@ -849,7 +924,7 @@ export default function OtaUpdatesPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {otaJobs.map((job) => {
+                    {displayedJobs.map((job) => {
                       const isSucceeded = job.status === 'succeeded'
                       const isInProgress = job.status === 'in_progress'
                       const isFailed = job.status === 'failed'
@@ -950,7 +1025,8 @@ export default function OtaUpdatesPage() {
                                   handleSimulateAck(
                                     job.jobId,
                                     job.deviceId,
-                                    job.status === 'in_progress' ? 'SUCCEEDED' : 'IN_PROGRESS'
+                                    job.status === 'in_progress' ? 'SUCCEEDED' : 'IN_PROGRESS',
+                                    job.otaType
                                   )
                                 }
                                 title={`Simulate ACK for ${job.jobId} (${
@@ -977,7 +1053,7 @@ export default function OtaUpdatesPage() {
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      handleSimulateAck(job.jobId, job.deviceId, 'IN_PROGRESS')
+                                      handleSimulateAck(job.jobId, job.deviceId, 'IN_PROGRESS', job.otaType)
                                       setActiveTestMenuJobId(null)
                                     }}
                                     className="w-full text-left px-3 py-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 flex items-center gap-1.5 font-semibold transition cursor-pointer"
@@ -988,7 +1064,7 @@ export default function OtaUpdatesPage() {
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      handleSimulateAck(job.jobId, job.deviceId, 'SUCCEEDED')
+                                      handleSimulateAck(job.jobId, job.deviceId, 'SUCCEEDED', job.otaType)
                                       setActiveTestMenuJobId(null)
                                     }}
                                     className="w-full text-left px-3 py-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 flex items-center gap-1.5 font-semibold transition cursor-pointer"
@@ -999,7 +1075,7 @@ export default function OtaUpdatesPage() {
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      handleSimulateAck(job.jobId, job.deviceId, 'FAILED')
+                                      handleSimulateAck(job.jobId, job.deviceId, 'FAILED', job.otaType)
                                       setActiveTestMenuJobId(null)
                                     }}
                                     className="w-full text-left px-3 py-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-1.5 font-semibold transition cursor-pointer"
@@ -1058,13 +1134,13 @@ export default function OtaUpdatesPage() {
               {/* Interactive Test Bar inside Modal */}
               <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                  Test ACK for Job {selectedJobForModal.jobId}:
+                  Test ACK for Job {selectedJobForModal.jobId} ({selectedJobForModal.otaType}):
                 </span>
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={async () => {
-                      await handleSimulateAck(selectedJobForModal.jobId, selectedJobForModal.deviceId, 'IN_PROGRESS')
+                      await handleSimulateAck(selectedJobForModal.jobId, selectedJobForModal.deviceId, 'IN_PROGRESS', selectedJobForModal.otaType)
                       const updated = (await otaService.getOtaJobs()).find((j) => j.id === selectedJobForModal.id)
                       if (updated) setSelectedJobForModal(updated)
                     }}
@@ -1075,7 +1151,7 @@ export default function OtaUpdatesPage() {
                   <button
                     type="button"
                     onClick={async () => {
-                      await handleSimulateAck(selectedJobForModal.jobId, selectedJobForModal.deviceId, 'SUCCEEDED')
+                      await handleSimulateAck(selectedJobForModal.jobId, selectedJobForModal.deviceId, 'SUCCEEDED', selectedJobForModal.otaType)
                       const updated = (await otaService.getOtaJobs()).find((j) => j.id === selectedJobForModal.id)
                       if (updated) setSelectedJobForModal(updated)
                     }}
@@ -1086,7 +1162,7 @@ export default function OtaUpdatesPage() {
                   <button
                     type="button"
                     onClick={async () => {
-                      await handleSimulateAck(selectedJobForModal.jobId, selectedJobForModal.deviceId, 'FAILED')
+                      await handleSimulateAck(selectedJobForModal.jobId, selectedJobForModal.deviceId, 'FAILED', selectedJobForModal.otaType)
                       const updated = (await otaService.getOtaJobs()).find((j) => j.id === selectedJobForModal.id)
                       if (updated) setSelectedJobForModal(updated)
                     }}

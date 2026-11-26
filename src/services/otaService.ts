@@ -1,5 +1,5 @@
 import { config } from './config'
-import type { OtaDeployParams, OtaDeployResponse, OtaJobRecord } from '@/types/ota'
+import type { OtaType, OtaDeployParams, OtaDeployResponse, OtaJobRecord } from '@/types/ota'
 
 const LOCAL_STORAGE_OTA_JOBS_KEY = 'gps_ota_jobs_cache'
 
@@ -63,7 +63,7 @@ export const otaService = {
         }
 
         const rec: OtaJobRecord = {
-          id: `${params.jobId}_${imei}`,
+          id: `${params.otaType}_${params.jobId}_${imei}`,
           jobId: params.jobId,
           deviceId: imei,
           otaType: params.otaType,
@@ -119,12 +119,12 @@ export const otaService = {
     return getCachedOtaJobs()
   },
 
-  async simulateAck(jobId: string, deviceId: string, status = 'SUCCEEDED'): Promise<any> {
+  async simulateAck(jobId: string, deviceId: string, status = 'SUCCEEDED', otaType?: OtaType): Promise<any> {
     try {
       const res = await fetch(`${config.apiUrl}/api/ota/simulate-ack`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId, deviceId, status }),
+        body: JSON.stringify({ jobId, deviceId, status, otaType }),
       })
       if (res.ok) return await res.json()
     } catch {}
@@ -132,7 +132,10 @@ export const otaService = {
     // Fallback local update
     const current = getCachedOtaJobs()
     const target = current.find(
-      (j) => j.jobId.toLowerCase() === jobId.toLowerCase() && j.deviceId === deviceId
+      (j) =>
+        j.jobId.toLowerCase() === jobId.toLowerCase() &&
+        j.deviceId === deviceId &&
+        (!otaType || j.otaType === otaType)
     )
     if (target) {
       const upper = (status || 'SUCCEEDED').toUpperCase()
@@ -158,7 +161,7 @@ export const otaService = {
       target.ackHistory.push({
         status: derived,
         timestamp: target.ackedAt,
-        payload: { jobId, imei_number: deviceId, status: upper },
+        payload: { jobId, imei_number: deviceId, status: upper, ota_type: target.otaType },
       })
       saveCachedOtaJob(target)
     }

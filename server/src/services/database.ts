@@ -151,8 +151,21 @@ export class GpsStore {
         ? 'failed'
         : 'acknowledged'
 
+    // Extract incoming OTA type if specified in payload or topic
+    const incomingOtaType: 'APP_OTA' | 'DF_OTA' | undefined =
+      ackData?.ota_type === 'DF_OTA' || ackData?.ota_type === 'DFOTA' || ackData?.topic === 'DF_OTA'
+        ? 'DF_OTA'
+        : ackData?.ota_type === 'APP_OTA' || ackData?.topic === 'APP_OTA'
+        ? 'APP_OTA'
+        : undefined
+
     let updated = false
     for (const job of this.otaJobs) {
+      // Must match OTA type: APP_OTA ACK will NEVER touch DF_OTA job, and vice-versa!
+      if (incomingOtaType && job.otaType !== incomingOtaType) {
+        continue
+      }
+
       const matchDevice = deviceId
         ? job.deviceId === deviceId || job.deviceId.endsWith(deviceId) || deviceId.endsWith(job.deviceId)
         : false
@@ -183,6 +196,26 @@ export class GpsStore {
           payload: typeof ackData === 'string' ? JSON.parse(ackData) : ackData,
         })
         updated = true
+
+        // When OTA succeeds, update the corresponding independent version in device record!
+        if (derivedStatus === 'succeeded' && job.deviceId) {
+          const devRec = this.devices.get(job.deviceId)
+          if (devRec && devRec.data) {
+            try {
+              const parsedData = JSON.parse(devRec.data)
+              if (!parsedData.device) parsedData.device = {}
+              if (job.otaType === 'APP_OTA') {
+                parsedData.device.appVersion = job.version
+              } else if (job.otaType === 'DF_OTA') {
+                parsedData.device.sdkVersion = job.version
+              }
+              devRec.data = JSON.stringify(parsedData)
+              devRec.updatedAt = now
+              this.devices.set(job.deviceId, devRec)
+            } catch {}
+          }
+        }
+
         // Crucial: Only update this specific targeted job, never touch previous historical jobs!
         break
       }
