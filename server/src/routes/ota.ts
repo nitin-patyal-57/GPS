@@ -42,15 +42,15 @@ router.post('/ota/deploy', async (req, res) => {
 
       // Template matching user spec:
       // {"ota_type":"APP_OTA","jobId":"J1","url_address":"https://…/customer_app.bin","file_sha256":"<64 hex>","app_v":"<new app_v>"}
-      // {"ota_type":"DF_OTA","jobId":"J2","url_address":"https://…/system_patch.bin","file_sha256":"<64 hex>","sdk_v":"<new sdk_v>"}
+      // {"ota_type":"DF_OTA","jobId":"J2","url_address":"https://…/system_patch.bin","sdk_v":"<new sdk_v>"}
       const payloadObj: any = {
         ota_type: cleanType,
         jobId: cleanJobId,
         url_address: cleanUrl,
-        file_sha256: cleanSha256,
       }
 
       if (cleanType === 'APP_OTA') {
+        payloadObj.file_sha256 = cleanSha256
         payloadObj.app_v = cleanVersion
       } else {
         payloadObj.sdk_v = cleanVersion
@@ -65,7 +65,7 @@ router.post('/ota/deploy', async (req, res) => {
         deviceId: imei,
         otaType: cleanType,
         urlAddress: cleanUrl,
-        fileSha256: cleanSha256,
+        fileSha256: cleanType === 'APP_OTA' ? cleanSha256 : '',
         version: cleanVersion,
         payload: JSON.stringify(payloadObj),
         status: 'sent',

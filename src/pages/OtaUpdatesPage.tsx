@@ -195,20 +195,19 @@ export default function OtaUpdatesPage() {
 
   // Sample payload for preview (matching user's payload template)
   const samplePayload = useMemo(() => {
-    const sampleImei = Array.from(selectedIds)[0] || '861185084122719'
     const obj: any = {
       ota_type: otaType,
       jobId,
       url_address: urlAddress,
-      file_sha256: fileSha256,
     }
     if (otaType === 'APP_OTA') {
+      obj.file_sha256 = fileSha256
       obj.app_v = version
     } else {
       obj.sdk_v = version
     }
     return JSON.stringify(obj, null, 2)
-  }, [otaType, jobId, urlAddress, fileSha256, version, selectedIds])
+  }, [otaType, jobId, urlAddress, fileSha256, version])
 
   const copyPayloadToClipboard = () => {
     navigator.clipboard.writeText(samplePayload)
@@ -261,6 +260,11 @@ export default function OtaUpdatesPage() {
       return
     }
 
+    if (otaType === 'APP_OTA' && !fileSha256.trim()) {
+      setDeployResult({ success: false, message: 'Please provide the file SHA-256 checksum for APP_OTA.' })
+      return
+    }
+
     setIsDeploying(true)
     setDeployResult(null)
 
@@ -270,7 +274,7 @@ export default function OtaUpdatesPage() {
         otaType,
         jobId,
         urlAddress,
-        fileSha256,
+        fileSha256: otaType === 'APP_OTA' ? fileSha256 : undefined,
         version,
       })
 
@@ -678,49 +682,51 @@ export default function OtaUpdatesPage() {
                 />
               </div>
 
-              {/* File SHA-256 */}
-              <div className="mb-4 space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    File Checksum (<code className="text-slate-400">file_sha256</code>)
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleComputeHash}
-                    disabled={isComputingHash}
-                    className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline disabled:opacity-50 transition"
-                  >
-                    {isComputingHash ? (
-                      <>
-                        <RefreshCw className="h-3 w-3 animate-spin" />
-                        Downloading & Computing...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="h-3 w-3" />
-                        Compute SHA-256 from URL
-                      </>
-                    )}
-                  </button>
+              {/* File SHA-256 (Required only for APP_OTA, not DFOTA) */}
+              {otaType === 'APP_OTA' && (
+                <div className="mb-4 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      File Checksum (<code className="text-slate-400">file_sha256</code>)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleComputeHash}
+                      disabled={isComputingHash}
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline disabled:opacity-50 transition"
+                    >
+                      {isComputingHash ? (
+                        <>
+                          <RefreshCw className="h-3 w-3 animate-spin" />
+                          Downloading & Computing...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-3 w-3" />
+                          Compute SHA-256 from URL
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={fileSha256}
+                    onChange={(e) => setFileSha256(e.target.value)}
+                    placeholder="64-character hex SHA-256 hash"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-mono text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                  />
+                  {hashStatus && (
+                    <p
+                      className={`text-[11px] font-medium flex items-center gap-1 mt-1 ${
+                        hashStatus.success ? 'text-emerald-500' : 'text-rose-500'
+                      }`}
+                    >
+                      {hashStatus.success ? <Check className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                      {hashStatus.message}
+                    </p>
+                  )}
                 </div>
-                <input
-                  type="text"
-                  value={fileSha256}
-                  onChange={(e) => setFileSha256(e.target.value)}
-                  placeholder="64-character hex SHA-256 hash"
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-mono text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                />
-                {hashStatus && (
-                  <p
-                    className={`text-[11px] font-medium flex items-center gap-1 mt-1 ${
-                      hashStatus.success ? 'text-emerald-500' : 'text-rose-500'
-                    }`}
-                  >
-                    {hashStatus.success ? <Check className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
-                    {hashStatus.message}
-                  </p>
-                )}
-              </div>
+              )}
 
               {/* Live Payload Preview */}
               <div className="mb-4 rounded-xl bg-slate-950 p-3 text-slate-200 border border-slate-800">

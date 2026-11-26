@@ -54,9 +54,9 @@ export const otaService = {
           ota_type: params.otaType,
           jobId: params.jobId,
           url_address: params.urlAddress,
-          file_sha256: params.fileSha256 || '',
         }
         if (params.otaType === 'APP_OTA') {
+          payloadObj.file_sha256 = params.fileSha256 || ''
           payloadObj.app_v = params.version
         } else {
           payloadObj.sdk_v = params.version
@@ -68,7 +68,7 @@ export const otaService = {
           deviceId: imei,
           otaType: params.otaType,
           urlAddress: params.urlAddress,
-          fileSha256: params.fileSha256 || '',
+          fileSha256: params.otaType === 'APP_OTA' ? (params.fileSha256 || '') : '',
           version: params.version,
           payload: JSON.stringify(payloadObj),
           status: 'sent',
