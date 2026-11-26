@@ -59,7 +59,6 @@ export default function OtaUpdatesPage() {
 
   // OTA Form Configuration
   const [otaType, setOtaType] = useState<OtaType>('APP_OTA')
-  const [jobId, setJobId] = useState(() => `J_APP_${Math.floor(100 + Math.random() * 900)}`)
   const [urlAddress, setUrlAddress] = useState('https://firmware.gw1ns.io/builds/customer_app_v1.0.3.bin')
   const [version, setVersion] = useState('WMZ_DEV_1.0.3')
   const [fileSha256, setFileSha256] = useState('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')
@@ -215,17 +214,15 @@ export default function OtaUpdatesPage() {
     setSelectedIds(new Set())
   }
 
-  // Pre-fill version templates and type-specific Job ID when switching OTA type
+  // Pre-fill version templates when switching OTA type
   const handleTypeChange = (type: OtaType) => {
     setOtaType(type)
     if (type === 'APP_OTA') {
       setUrlAddress('https://firmware.gw1ns.io/builds/customer_app_v1.0.3.bin')
       setVersion('WMZ_DEV_1.0.3')
-      setJobId(`J_APP_${Math.floor(100 + Math.random() * 900)}`)
     } else {
       setUrlAddress('https://firmware.gw1ns.io/patches/system_patch_v2.0.1.bin')
       setVersion('WM_SDK_C_261009')
-      setJobId(`J_DF_${Math.floor(100 + Math.random() * 900)}`)
     }
   }
 
@@ -233,7 +230,7 @@ export default function OtaUpdatesPage() {
   const samplePayload = useMemo(() => {
     const obj: any = {
       ota_type: otaType,
-      jobId,
+      jobId: otaType === 'APP_OTA' ? 'J_APP_xxx' : 'J_DF_xxx',
       url_address: urlAddress,
     }
     if (otaType === 'APP_OTA') {
@@ -243,7 +240,7 @@ export default function OtaUpdatesPage() {
       obj.sdk_v = version
     }
     return JSON.stringify(obj, null, 2)
-  }, [otaType, jobId, urlAddress, fileSha256, version])
+  }, [otaType, urlAddress, fileSha256, version])
 
   const copyPayloadToClipboard = () => {
     navigator.clipboard.writeText(samplePayload)
@@ -304,11 +301,17 @@ export default function OtaUpdatesPage() {
     setIsDeploying(true)
     setDeployResult(null)
 
+    // Generate Job ID automatically when submit button is pressed
+    const autoJobId =
+      otaType === 'APP_OTA'
+        ? `J_APP_${Math.floor(100 + Math.random() * 900)}`
+        : `J_DF_${Math.floor(100 + Math.random() * 900)}`
+
     try {
       const res = await otaService.deployOta({
         deviceIds: Array.from(selectedIds),
         otaType,
-        jobId,
+        jobId: autoJobId,
         urlAddress,
         fileSha256: otaType === 'APP_OTA' ? fileSha256 : undefined,
         version,
@@ -317,17 +320,11 @@ export default function OtaUpdatesPage() {
       if (res.success) {
         setDeployResult({
           success: true,
-          message: `Successfully dispatched ${res.count} ${otaType} payloads for Job ID ${jobId}. Now monitoring for acknowledgments on /ack!`,
+          message: `Successfully dispatched ${res.count} ${otaType} payloads for Job ID ${res.jobId || autoJobId}. Now monitoring for acknowledgments on /ack!`,
         })
         await loadJobs()
         // Switch to history/monitor tab after 1.5 seconds
         setTimeout(() => setActiveTab('history'), 1500)
-        // Refresh Job ID for next deployment
-        setJobId(
-          otaType === 'APP_OTA'
-            ? `J_APP_${Math.floor(100 + Math.random() * 900)}`
-            : `J_DF_${Math.floor(100 + Math.random() * 900)}`
-        )
       } else {
         setDeployResult({ success: false, message: res.error || 'Failed to dispatch OTA update.' })
       }
@@ -672,33 +669,19 @@ export default function OtaUpdatesPage() {
                 </div>
               </div>
 
-              {/* Job ID Input */}
-              <div className="mb-3 space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Job ID (<code className="text-slate-400">jobId</code>)
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setJobId(
-                        otaType === 'APP_OTA'
-                          ? `J_APP_${Math.floor(100 + Math.random() * 900)}`
-                          : `J_DF_${Math.floor(100 + Math.random() * 900)}`
-                      )
-                    }
-                    className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
-                  >
-                    <RefreshCw className="h-3 w-3" /> Auto-generate
-                  </button>
+              {/* Job ID (Auto-generated on submit) */}
+              <div className="mb-3.5 flex items-center justify-between rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-slate-700/80 dark:bg-slate-800/50">
+                <div>
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    <span>Job ID (<code className="text-slate-400">jobId</code>)</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Generated automatically when submit button is pressed
+                  </p>
                 </div>
-                <input
-                  type="text"
-                  value={jobId}
-                  onChange={(e) => setJobId(e.target.value)}
-                  placeholder="e.g. J1, J2, JOB_OTA_01"
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-mono text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                />
+                <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                  {otaType === 'APP_OTA' ? 'J_APP_xxx' : 'J_DF_xxx'} (Auto)
+                </span>
               </div>
 
               {/* URL Address Input */}

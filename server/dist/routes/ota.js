@@ -25,8 +25,9 @@ router.post('/ota/deploy', async (req, res) => {
         if (!version || !version.trim()) {
             return res.status(400).json({ error: 'Target version is required' });
         }
-        const cleanJobId = (jobId && String(jobId).trim()) || `J_${Date.now().toString(36).toUpperCase()}`;
         const cleanType = otaType === 'DF_OTA' ? 'DF_OTA' : 'APP_OTA';
+        const cleanJobId = (jobId && String(jobId).trim()) ||
+            `J_${cleanType === 'APP_OTA' ? 'APP' : 'DF'}_${Math.floor(100 + Math.random() * 900)}`;
         const cleanUrl = String(urlAddress).trim();
         const cleanSha256 = fileSha256 ? String(fileSha256).trim() : '';
         const cleanVersion = String(version).trim();
