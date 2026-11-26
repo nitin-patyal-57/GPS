@@ -143,7 +143,7 @@ export class GpsStore {
     const ackPayloadStr = typeof ackData === 'string' ? ackData : JSON.stringify(ackData || {})
     const rawStatus = (ackData?.status || '').toUpperCase()
     const derivedStatus: OtaJobRecord['status'] =
-      rawStatus === 'SUCCEEDED'
+      rawStatus === 'SUCCEEDED' || rawStatus === 'SUCCESS'
         ? 'succeeded'
         : rawStatus === 'IN_PROGRESS'
         ? 'in_progress'
@@ -158,7 +158,19 @@ export class GpsStore {
         : false
       const matchJob = jobId ? job.jobId.toLowerCase() === jobId.toLowerCase() : false
 
-      if (matchJob || matchDevice) {
+      let isMatch = false
+      if (jobId && deviceId) {
+        // Both jobId and deviceId provided: strictly match both
+        isMatch = matchJob && matchDevice
+      } else if (jobId) {
+        // Only jobId provided
+        isMatch = matchJob
+      } else if (deviceId) {
+        // Fallback when device sends bare ACK without jobId: match latest device job only
+        isMatch = matchDevice
+      }
+
+      if (isMatch) {
         job.status = derivedStatus
         job.ackedAt = now
         job.ackPayload = ackPayloadStr
@@ -171,6 +183,8 @@ export class GpsStore {
           payload: typeof ackData === 'string' ? JSON.parse(ackData) : ackData,
         })
         updated = true
+        // Crucial: Only update this specific targeted job, never touch previous historical jobs!
+        break
       }
     }
     if (updated) this.saveToFile()

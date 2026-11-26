@@ -119,7 +119,7 @@ export const otaService = {
     return getCachedOtaJobs()
   },
 
-  async simulateAck(jobId: string, deviceId: string, status = 'SUCCESS'): Promise<any> {
+  async simulateAck(jobId: string, deviceId: string, status = 'SUCCEEDED'): Promise<any> {
     try {
       const res = await fetch(`${config.apiUrl}/api/ota/simulate-ack`, {
         method: 'POST',
@@ -131,11 +131,35 @@ export const otaService = {
 
     // Fallback local update
     const current = getCachedOtaJobs()
-    const target = current.find((j) => j.jobId === jobId && j.deviceId === deviceId)
+    const target = current.find(
+      (j) => j.jobId.toLowerCase() === jobId.toLowerCase() && j.deviceId === deviceId
+    )
     if (target) {
-      target.status = 'acknowledged'
+      const upper = (status || 'SUCCEEDED').toUpperCase()
+      const derived: OtaJobRecord['status'] =
+        upper === 'SUCCEEDED' || upper === 'SUCCESS'
+          ? 'succeeded'
+          : upper === 'IN_PROGRESS'
+          ? 'in_progress'
+          : upper === 'FAILED'
+          ? 'failed'
+          : 'acknowledged'
+
+      target.status = derived
       target.ackedAt = new Date().toISOString()
-      target.ackPayload = JSON.stringify({ jobId, imei: deviceId, status, message: 'Simulated ACK received' })
+      target.ackPayload = JSON.stringify({
+        ota_type: target.otaType,
+        jobId,
+        url_address: target.urlAddress,
+        status: upper,
+        imei_number: deviceId,
+      })
+      if (!target.ackHistory) target.ackHistory = []
+      target.ackHistory.push({
+        status: derived,
+        timestamp: target.ackedAt,
+        payload: { jobId, imei_number: deviceId, status: upper },
+      })
       saveCachedOtaJob(target)
     }
     return { success: true }

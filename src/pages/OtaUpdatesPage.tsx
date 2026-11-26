@@ -29,6 +29,8 @@ import {
   CheckSquare,
   Square,
   Sparkles,
+  Play,
+  ChevronDown,
 } from 'lucide-react'
 import { formatRelativeTime, formatTimeSafe, parseDateSafe } from '@/utils/helpers'
 
@@ -46,6 +48,7 @@ function isDeviceMqttOnline(lastSeen: string | number | undefined | null): boole
 export default function OtaUpdatesPage() {
   const { devices, loading, refetch } = useGpsDevices()
   const [activeTab, setActiveTab] = useState<ActiveTab>('deploy')
+  const [activeTestMenuJobId, setActiveTestMenuJobId] = useState<string | null>(null)
 
   // Search & Filter state
   const [search, setSearch] = useState('')
@@ -104,7 +107,16 @@ export default function OtaUpdatesPage() {
               ? next[i].deviceId === ackImei || next[i].deviceId.endsWith(ackImei) || ackImei.endsWith(next[i].deviceId)
               : false
 
-            if (sameJob || sameDevice) {
+            let isMatch = false
+            if (ackJobId && ackImei) {
+              isMatch = sameJob && sameDevice
+            } else if (ackJobId) {
+              isMatch = sameJob
+            } else if (ackImei) {
+              isMatch = sameDevice
+            }
+
+            if (isMatch) {
               const currentHistory = next[i].ackHistory || []
               const newEntry = {
                 status: derivedStatus,
@@ -118,6 +130,8 @@ export default function OtaUpdatesPage() {
                 ackPayload: typeof payload === 'string' ? payload : JSON.stringify(payload),
                 ackHistory: [...currentHistory, newEntry],
               }
+              // Only update this specific targeted job!
+              break
             }
           }
           return next
@@ -298,8 +312,8 @@ export default function OtaUpdatesPage() {
     }
   }
 
-  const handleSimulateAck = async (jId: string, dId: string) => {
-    await otaService.simulateAck(jId, dId)
+  const handleSimulateAck = async (jId: string, dId: string, status: string = 'SUCCEEDED') => {
+    await otaService.simulateAck(jId, dId, status)
     await loadJobs()
   }
 
@@ -929,15 +943,73 @@ export default function OtaUpdatesPage() {
                             )}
                           </td>
                           <td className="px-4 py-3 text-right">
-                            {!isAcked && (
+                            <div className="relative inline-flex items-center justify-end gap-1">
                               <button
-                                onClick={() => handleSimulateAck(job.jobId, job.deviceId)}
-                                title="Simulate incoming ACK packet from device"
-                                className="rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-600 dark:bg-slate-800 dark:hover:bg-slate-700 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition"
+                                type="button"
+                                onClick={() =>
+                                  handleSimulateAck(
+                                    job.jobId,
+                                    job.deviceId,
+                                    job.status === 'in_progress' ? 'SUCCEEDED' : 'IN_PROGRESS'
+                                  )
+                                }
+                                title={`Simulate ACK for ${job.jobId} (${
+                                  job.status === 'in_progress' ? 'Send SUCCEEDED' : 'Send IN_PROGRESS'
+                                })`}
+                                className="rounded-lg bg-slate-100 hover:bg-emerald-500 hover:text-white dark:bg-slate-800 dark:hover:bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition flex items-center gap-1 shadow-2xs cursor-pointer"
                               >
-                                Test ACK
+                                <Play className="h-3 w-3 text-emerald-500" />
+                                <span>Test ACK</span>
                               </button>
-                            )}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setActiveTestMenuJobId(activeTestMenuJobId === job.id ? null : job.id)
+                                }
+                                title="Select specific ACK status to test"
+                                className="rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 px-1.5 py-1 text-[11px] font-bold text-slate-500 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
+                              >
+                                <ChevronDown className="h-3 w-3" />
+                              </button>
+
+                              {activeTestMenuJobId === job.id && (
+                                <div className="absolute right-0 top-full mt-1 w-36 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl py-1 z-30 text-[11px]">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      handleSimulateAck(job.jobId, job.deviceId, 'IN_PROGRESS')
+                                      setActiveTestMenuJobId(null)
+                                    }}
+                                    className="w-full text-left px-3 py-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 flex items-center gap-1.5 font-semibold transition cursor-pointer"
+                                  >
+                                    <span className="h-2 w-2 rounded-full bg-blue-500" />
+                                    IN_PROGRESS
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      handleSimulateAck(job.jobId, job.deviceId, 'SUCCEEDED')
+                                      setActiveTestMenuJobId(null)
+                                    }}
+                                    className="w-full text-left px-3 py-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 flex items-center gap-1.5 font-semibold transition cursor-pointer"
+                                  >
+                                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                                    SUCCEEDED
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      handleSimulateAck(job.jobId, job.deviceId, 'FAILED')
+                                      setActiveTestMenuJobId(null)
+                                    }}
+                                    className="w-full text-left px-3 py-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-1.5 font-semibold transition cursor-pointer"
+                                  >
+                                    <span className="h-2 w-2 rounded-full bg-rose-500" />
+                                    FAILED
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       )
@@ -980,6 +1052,48 @@ export default function OtaUpdatesPage() {
                   <span className="font-mono font-bold">
                     {formatTimeSafe(selectedJobForModal.ackedAt, 'HH:mm:ss')} ({formatRelativeTime(selectedJobForModal.ackedAt)})
                   </span>
+                </div>
+              </div>
+
+              {/* Interactive Test Bar inside Modal */}
+              <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                  Test ACK for Job {selectedJobForModal.jobId}:
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await handleSimulateAck(selectedJobForModal.jobId, selectedJobForModal.deviceId, 'IN_PROGRESS')
+                      const updated = (await otaService.getOtaJobs()).find((j) => j.id === selectedJobForModal.id)
+                      if (updated) setSelectedJobForModal(updated)
+                    }}
+                    className="px-2 py-1 rounded-md bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-[10px] font-bold transition cursor-pointer"
+                  >
+                    + IN_PROGRESS
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await handleSimulateAck(selectedJobForModal.jobId, selectedJobForModal.deviceId, 'SUCCEEDED')
+                      const updated = (await otaService.getOtaJobs()).find((j) => j.id === selectedJobForModal.id)
+                      if (updated) setSelectedJobForModal(updated)
+                    }}
+                    className="px-2 py-1 rounded-md bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-bold transition cursor-pointer"
+                  >
+                    + SUCCEEDED
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await handleSimulateAck(selectedJobForModal.jobId, selectedJobForModal.deviceId, 'FAILED')
+                      const updated = (await otaService.getOtaJobs()).find((j) => j.id === selectedJobForModal.id)
+                      if (updated) setSelectedJobForModal(updated)
+                    }}
+                    className="px-2 py-1 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-[10px] font-bold transition cursor-pointer"
+                  >
+                    + FAILED
+                  </button>
                 </div>
               </div>
 

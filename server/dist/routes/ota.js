@@ -163,19 +163,33 @@ router.get('/ota/jobs', (req, res) => {
  */
 router.post('/ota/simulate-ack', (req, res) => {
     try {
-        const { jobId, deviceId, status = 'SUCCESS', message = 'Firmware downloaded and verified' } = req.body;
+        const { jobId, deviceId, status = 'SUCCEEDED', message = 'Firmware downloaded and verified' } = req.body;
         if (!jobId || !deviceId) {
             return res.status(400).json({ error: 'jobId and deviceId are required' });
         }
         const db = (0, database_1.getDb)();
         const now = new Date().toISOString();
+        const allJobs = typeof db.getOtaJobs === 'function' ? db.getOtaJobs(500) : [];
+        const targetJob = allJobs.find((j) => j.jobId.toLowerCase() === String(jobId).trim().toLowerCase() &&
+            (j.deviceId === String(deviceId).trim() || !deviceId));
+        const ackStatus = String(status || 'SUCCEEDED').toUpperCase();
         const ackPayload = {
+            ota_type: targetJob?.otaType || 'APP_OTA',
             jobId,
-            imei: deviceId,
-            status,
-            message,
+            url_address: targetJob?.urlAddress || '',
+            status: ackStatus,
+            topic: `${targetJob?.otaType || 'APP_OTA'}`,
+            imei_number: deviceId,
             timestamp: now,
         };
+        if (targetJob?.otaType === 'APP_OTA') {
+            if (targetJob.fileSha256)
+                ackPayload.file_sha256 = targetJob.fileSha256;
+            ackPayload.app_v = targetJob.version || '1.0.0';
+        }
+        else {
+            ackPayload.sdk_v = targetJob?.version || '1.0.0';
+        }
         if (typeof db.updateOtaJobAck === 'function') {
             db.updateOtaJobAck(jobId, deviceId, ackPayload);
         }
@@ -183,6 +197,7 @@ router.post('/ota/simulate-ack', (req, res) => {
             topic: `soundbox_dev/${deviceId}/ack`,
             deviceId,
             jobId,
+            status: ackStatus,
             payload: ackPayload,
             raw: JSON.stringify(ackPayload),
             timestamp: now,
