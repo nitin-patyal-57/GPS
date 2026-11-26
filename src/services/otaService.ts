@@ -57,9 +57,12 @@ export const otaService = {
         }
         if (params.otaType === 'APP_OTA') {
           payloadObj.file_sha256 = params.fileSha256 || ''
-          payloadObj.app_v = params.version
+          payloadObj.app_v = params.appVersion || params.version
         } else {
-          payloadObj.sdk_v = params.version
+          payloadObj.sdk_v = params.sdkVersion || params.version
+          if (params.appVersion && params.appVersion.trim()) {
+            payloadObj.app_v = params.appVersion.trim()
+          }
         }
 
         const rec: OtaJobRecord = {
@@ -70,6 +73,8 @@ export const otaService = {
           urlAddress: params.urlAddress,
           fileSha256: params.otaType === 'APP_OTA' ? (params.fileSha256 || '') : '',
           version: params.version,
+          appVersion: params.appVersion,
+          sdkVersion: params.sdkVersion,
           payload: JSON.stringify(payloadObj),
           status: 'sent',
           sentAt: now,

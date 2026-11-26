@@ -7,6 +7,8 @@ export interface OtaDeployParams {
   urlAddress: string
   fileSha256?: string
   version: string
+  appVersion?: string
+  sdkVersion?: string
 }
 
 export interface OtaAckLogEntry {
@@ -23,6 +25,8 @@ export interface OtaJobRecord {
   urlAddress: string
   fileSha256: string
   version: string
+  appVersion?: string
+  sdkVersion?: string
   payload: string
   status: 'pending' | 'sent' | 'acknowledged' | 'in_progress' | 'succeeded' | 'failed'
   sentAt: string

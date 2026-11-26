@@ -51,6 +51,8 @@ export interface OtaJobRecord {
   urlAddress: string
   fileSha256: string
   version: string
+  appVersion?: string
+  sdkVersion?: string
   payload: string
   status: 'pending' | 'sent' | 'acknowledged' | 'in_progress' | 'succeeded' | 'failed'
   sentAt: string
@@ -205,9 +207,12 @@ export class GpsStore {
               const parsedData = JSON.parse(devRec.data)
               if (!parsedData.device) parsedData.device = {}
               if (job.otaType === 'APP_OTA') {
-                parsedData.device.appVersion = job.version
+                parsedData.device.appVersion = job.appVersion || job.version
               } else if (job.otaType === 'DF_OTA') {
-                parsedData.device.sdkVersion = job.version
+                parsedData.device.sdkVersion = job.sdkVersion || job.version
+                if (job.appVersion) {
+                  parsedData.device.appVersion = job.appVersion
+                }
               }
               devRec.data = JSON.stringify(parsedData)
               devRec.updatedAt = now

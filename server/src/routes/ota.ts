@@ -12,7 +12,16 @@ const router = Router()
  */
 router.post('/ota/deploy', async (req, res) => {
   try {
-    const { deviceIds, otaType = 'APP_OTA', jobId, urlAddress, fileSha256, version } = req.body
+    const {
+      deviceIds,
+      otaType = 'APP_OTA',
+      jobId,
+      urlAddress,
+      fileSha256,
+      version,
+      appVersion,
+      sdkVersion,
+    } = req.body
 
     if (!Array.isArray(deviceIds) || deviceIds.length === 0) {
       return res.status(400).json({ error: 'At least one deviceId must be selected' })
@@ -22,17 +31,20 @@ router.post('/ota/deploy', async (req, res) => {
       return res.status(400).json({ error: 'Firmware URL address (url_address) is required' })
     }
 
-    if (!version || !version.trim()) {
+    const cleanType: 'APP_OTA' | 'DF_OTA' = otaType === 'DF_OTA' ? 'DF_OTA' : 'APP_OTA'
+    const cleanVersion = String(version || (cleanType === 'APP_OTA' ? appVersion : sdkVersion) || '').trim()
+    const cleanAppVersion = String(appVersion || (cleanType === 'APP_OTA' ? version : '')).trim()
+    const cleanSdkVersion = String(sdkVersion || (cleanType === 'DF_OTA' ? version : '')).trim()
+
+    if (!cleanVersion && !cleanAppVersion && !cleanSdkVersion) {
       return res.status(400).json({ error: 'Target version is required' })
     }
 
-    const cleanType: 'APP_OTA' | 'DF_OTA' = otaType === 'DF_OTA' ? 'DF_OTA' : 'APP_OTA'
     const cleanJobId =
       (jobId && String(jobId).trim()) ||
       `J_${cleanType === 'APP_OTA' ? 'APP' : 'DF'}_${Math.floor(100 + Math.random() * 900)}`
     const cleanUrl = String(urlAddress).trim()
     const cleanSha256 = fileSha256 ? String(fileSha256).trim() : ''
-    const cleanVersion = String(version).trim()
 
     const db = getDb()
     const now = new Date().toISOString()
@@ -44,7 +56,7 @@ router.post('/ota/deploy', async (req, res) => {
 
       // Template matching user spec:
       // {"ota_type":"APP_OTA","jobId":"J1","url_address":"https://…/customer_app.bin","file_sha256":"<64 hex>","app_v":"<new app_v>"}
-      // {"ota_type":"DF_OTA","jobId":"J2","url_address":"https://…/system_patch.bin","sdk_v":"<new sdk_v>"}
+      // {"ota_type":"DF_OTA","jobId":"J2","url_address":"https://…/system_patch.bin","sdk_v":"<new sdk_v>","app_v":"<optional new app_v>"}
       const payloadObj: any = {
         ota_type: cleanType,
         jobId: cleanJobId,
@@ -53,9 +65,12 @@ router.post('/ota/deploy', async (req, res) => {
 
       if (cleanType === 'APP_OTA') {
         payloadObj.file_sha256 = cleanSha256
-        payloadObj.app_v = cleanVersion
+        payloadObj.app_v = cleanAppVersion || cleanVersion
       } else {
-        payloadObj.sdk_v = cleanVersion
+        payloadObj.sdk_v = cleanSdkVersion || cleanVersion
+        if (cleanAppVersion) {
+          payloadObj.app_v = cleanAppVersion
+        }
       }
 
       // Publish to MQTT
@@ -68,7 +83,9 @@ router.post('/ota/deploy', async (req, res) => {
         otaType: cleanType,
         urlAddress: cleanUrl,
         fileSha256: cleanType === 'APP_OTA' ? cleanSha256 : '',
-        version: cleanVersion,
+        version: cleanVersion || (cleanType === 'APP_OTA' ? cleanAppVersion : cleanSdkVersion),
+        appVersion: cleanAppVersion || undefined,
+        sdkVersion: cleanSdkVersion || undefined,
         payload: JSON.stringify(payloadObj),
         status: 'sent',
         sentAt: now,
@@ -212,9 +229,12 @@ router.post('/ota/simulate-ack', (req, res) => {
 
     if (finalType === 'APP_OTA') {
       if (targetJob?.fileSha256) ackPayload.file_sha256 = targetJob.fileSha256
-      ackPayload.app_v = targetJob?.version || '1.0.0'
+      ackPayload.app_v = targetJob?.appVersion || targetJob?.version || '1.0.0'
     } else {
-      ackPayload.sdk_v = targetJob?.version || '1.0.0'
+      ackPayload.sdk_v = targetJob?.sdkVersion || targetJob?.version || '1.0.0'
+      if (targetJob?.appVersion) {
+        ackPayload.app_v = targetJob.appVersion
+      }
     }
 
     if (typeof db.updateOtaJobAck === 'function') {

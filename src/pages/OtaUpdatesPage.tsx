@@ -60,7 +60,8 @@ export default function OtaUpdatesPage() {
   // OTA Form Configuration
   const [otaType, setOtaType] = useState<OtaType>('APP_OTA')
   const [urlAddress, setUrlAddress] = useState('https://firmware.gw1ns.io/builds/customer_app_v1.0.3.bin')
-  const [version, setVersion] = useState('WMZ_DEV_1.0.3')
+  const [appVersion, setAppVersion] = useState('WMZ_DEV_1.0.3')
+  const [sdkVersion, setSdkVersion] = useState('WM_SDK_C_261009')
   const [fileSha256, setFileSha256] = useState('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')
   const [isComputingHash, setIsComputingHash] = useState(false)
   const [hashStatus, setHashStatus] = useState<{ message: string; success: boolean } | null>(null)
@@ -219,10 +220,8 @@ export default function OtaUpdatesPage() {
     setOtaType(type)
     if (type === 'APP_OTA') {
       setUrlAddress('https://firmware.gw1ns.io/builds/customer_app_v1.0.3.bin')
-      setVersion('WMZ_DEV_1.0.3')
     } else {
       setUrlAddress('https://firmware.gw1ns.io/patches/system_patch_v2.0.1.bin')
-      setVersion('WM_SDK_C_261009')
     }
   }
 
@@ -235,12 +234,15 @@ export default function OtaUpdatesPage() {
     }
     if (otaType === 'APP_OTA') {
       obj.file_sha256 = fileSha256
-      obj.app_v = version
+      obj.app_v = appVersion
     } else {
-      obj.sdk_v = version
+      obj.sdk_v = sdkVersion
+      if (appVersion.trim()) {
+        obj.app_v = appVersion.trim()
+      }
     }
     return JSON.stringify(obj, null, 2)
-  }, [otaType, urlAddress, fileSha256, version])
+  }, [otaType, urlAddress, fileSha256, appVersion, sdkVersion])
 
   const copyPayloadToClipboard = () => {
     navigator.clipboard.writeText(samplePayload)
@@ -288,8 +290,12 @@ export default function OtaUpdatesPage() {
       return
     }
 
-    if (!version.trim()) {
-      setDeployResult({ success: false, message: 'Please provide the target version.' })
+    const targetVersion = otaType === 'APP_OTA' ? appVersion.trim() : sdkVersion.trim()
+    if (!targetVersion) {
+      setDeployResult({
+        success: false,
+        message: `Please provide the target ${otaType === 'APP_OTA' ? 'app version' : 'SDK version'}.`,
+      })
       return
     }
 
@@ -314,7 +320,9 @@ export default function OtaUpdatesPage() {
         jobId: autoJobId,
         urlAddress,
         fileSha256: otaType === 'APP_OTA' ? fileSha256 : undefined,
-        version,
+        version: targetVersion,
+        appVersion: appVersion.trim() || undefined,
+        sdkVersion: sdkVersion.trim() || undefined,
       })
 
       if (res.success) {
@@ -698,23 +706,57 @@ export default function OtaUpdatesPage() {
                 />
               </div>
 
-              {/* Version Input (App_v or SDK_v) */}
-              <div className="mb-3 space-y-1">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-                  {otaType === 'APP_OTA' ? (
-                    <>Target App Version (<code className="text-slate-400">app_v</code>)</>
-                  ) : (
-                    <>Target SDK Version (<code className="text-slate-400">sdk_v</code>)</>
-                  )}
-                </label>
-                <input
-                  type="text"
-                  value={version}
-                  onChange={(e) => setVersion(e.target.value)}
-                  placeholder={otaType === 'APP_OTA' ? 'e.g. WMZ_DEV_1.0.3' : 'e.g. WM_SDK_C_261009'}
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-mono text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                />
-              </div>
+              {/* Version Inputs */}
+              {otaType === 'APP_OTA' ? (
+                <div className="mb-3 space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                    Target App Version (<code className="text-slate-400">app_v</code>)
+                  </label>
+                  <input
+                    type="text"
+                    value={appVersion}
+                    onChange={(e) => setAppVersion(e.target.value)}
+                    placeholder="e.g. WMZ_DEV_1.0.3"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-mono text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                  />
+                </div>
+              ) : (
+                <>
+                  <div className="mb-3 space-y-1">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                      Target SDK Version (<code className="text-slate-400">sdk_v</code>)
+                    </label>
+                    <input
+                      type="text"
+                      value={sdkVersion}
+                      onChange={(e) => setSdkVersion(e.target.value)}
+                      placeholder="e.g. WM_SDK_C_261009"
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-mono text-slate-900 focus:border-purple-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+
+                  <div className="mb-3 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Target App Version (<code className="text-slate-400">app_v</code>)
+                      </label>
+                      <span className="text-[10px] text-purple-600 dark:text-purple-400 font-semibold">
+                        Added for DFOTA
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      value={appVersion}
+                      onChange={(e) => setAppVersion(e.target.value)}
+                      placeholder="e.g. WMZ_DEV_1.0.3"
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-mono text-slate-900 focus:border-purple-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    />
+                    <p className="text-[10px] text-slate-400">
+                      Specify the application version to associate with this differential firmware patch.
+                    </p>
+                  </div>
+                </>
+              )}
 
               {/* File SHA-256 (Required only for APP_OTA, not DFOTA) */}
               {otaType === 'APP_OTA' && (
@@ -940,7 +982,16 @@ export default function OtaUpdatesPage() {
                               {job.otaType}
                             </span>
                             <p className="font-mono text-[11px] text-slate-700 dark:text-slate-300 mt-0.5">
-                              {job.version}
+                              {job.otaType === 'APP_OTA' ? (
+                                <>app_v: {job.appVersion || job.version}</>
+                              ) : (
+                                <>
+                                  <span>sdk_v: {job.sdkVersion || job.version}</span>
+                                  {job.appVersion && (
+                                    <span className="block text-[10px] text-slate-400">app_v: {job.appVersion}</span>
+                                  )}
+                                </>
+                              )}
                             </p>
                           </td>
                           <td className="px-4 py-3">
