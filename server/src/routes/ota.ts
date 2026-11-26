@@ -87,7 +87,7 @@ router.post('/ota/deploy', async (req, res) => {
         appVersion: cleanAppVersion || undefined,
         sdkVersion: cleanSdkVersion || undefined,
         payload: JSON.stringify(payloadObj),
-        status: 'sent',
+        status: 'in_progress',
         sentAt: now,
       }
 

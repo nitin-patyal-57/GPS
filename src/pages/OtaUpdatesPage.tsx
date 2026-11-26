@@ -29,8 +29,6 @@ import {
   CheckSquare,
   Square,
   Sparkles,
-  Play,
-  ChevronDown,
 } from 'lucide-react'
 import { formatRelativeTime, formatTimeSafe, parseDateSafe } from '@/utils/helpers'
 
@@ -48,7 +46,6 @@ function isDeviceMqttOnline(lastSeen: string | number | undefined | null): boole
 export default function OtaUpdatesPage() {
   const { devices, loading, refetch } = useGpsDevices()
   const [activeTab, setActiveTab] = useState<ActiveTab>('deploy')
-  const [activeTestMenuJobId, setActiveTestMenuJobId] = useState<string | null>(null)
 
   // Search & Filter state
   const [search, setSearch] = useState('')
@@ -102,7 +99,7 @@ export default function OtaUpdatesPage() {
           .toUpperCase()
           .replace(/[\s-]+/g, '_')
 
-        let derivedStatus: OtaJobRecord['status'] = 'acknowledged'
+        let derivedStatus: OtaJobRecord['status'] = 'in_progress'
         if (
           rawStatus === 'SUCCEEDED' ||
           rawStatus === 'SUCCESS' ||
@@ -112,21 +109,13 @@ export default function OtaUpdatesPage() {
         ) {
           derivedStatus = 'succeeded'
         } else if (
-          rawStatus === 'IN_PROGRESS' ||
-          rawStatus.includes('PROGRESS') ||
-          rawStatus.includes('DOWNLOADING') ||
-          rawStatus.includes('FLASHING') ||
-          rawStatus.includes('UPDATING') ||
-          rawStatus.includes('STARTED') ||
-          rawStatus.includes('RUNNING')
-        ) {
-          derivedStatus = 'in_progress'
-        } else if (
           rawStatus === 'FAILED' ||
           rawStatus.includes('FAIL') ||
           rawStatus.includes('ERROR')
         ) {
           derivedStatus = 'failed'
+        } else {
+          derivedStatus = 'in_progress'
         }
 
         const rawType = String(payload?.ota_type || payload?.type || payload?.topic || eventOtaType || data.otaType || '')
@@ -386,16 +375,6 @@ export default function OtaUpdatesPage() {
     } finally {
       setIsDeploying(false)
     }
-  }
-
-  const handleSimulateAck = async (
-    jId: string,
-    dId: string,
-    status: string = 'SUCCEEDED',
-    type?: OtaType
-  ) => {
-    await otaService.simulateAck(jId, dId, status, type)
-    await loadJobs()
   }
 
   if (loading && devices.length === 0) {
@@ -989,17 +968,13 @@ export default function OtaUpdatesPage() {
                       <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">Type & Version</th>
                       <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">MQTT Status</th>
                       <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">Dispatched Time</th>
-                      <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">ACK Response</th>
-                      <th className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {displayedJobs.map((job) => {
                       const s = String(job.status || '').toLowerCase().replace(/[\s-]+/g, '_')
                       const isSucceeded = s === 'succeeded' || s === 'success' || s === 'done' || s === 'completed'
-                      const isInProgress = s === 'in_progress' || s.includes('progress') || s.includes('downloading') || s.includes('flashing') || s.includes('updating') || s.includes('running')
                       const isFailed = s === 'failed' || s.includes('fail') || s.includes('error')
-                      const isAcked = isSucceeded || isInProgress || s === 'acknowledged'
 
                       return (
                         <tr
@@ -1007,7 +982,13 @@ export default function OtaUpdatesPage() {
                           className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition"
                         >
                           <td className="px-4 py-3">
-                            <span className="font-mono font-bold text-slate-900 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">
+                            <span
+                              onClick={() => job.ackPayload && setSelectedJobForModal(job)}
+                              title={job.ackPayload ? 'Click to view ACK response' : undefined}
+                              className={`font-mono font-bold text-slate-900 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 ${
+                                job.ackPayload ? 'cursor-pointer hover:border-emerald-500 hover:text-emerald-500' : ''
+                              }`}
+                            >
                               {job.jobId}
                             </span>
                           </td>
@@ -1042,130 +1023,25 @@ export default function OtaUpdatesPage() {
                           </td>
                           <td className="px-4 py-3">
                             {isSucceeded ? (
-                              <div className="space-y-0.5">
-                                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                                  <span>SUCCEEDED</span>
-                                </span>
-                                {job.ackHistory && job.ackHistory.length > 1 && (
-                                  <p className="text-[10px] text-emerald-500/80 font-medium pl-1">
-                                    ✓ IN_PROGRESS &rarr; SUCCEEDED
-                                  </p>
-                                )}
-                              </div>
-                            ) : isInProgress ? (
-                              <div className="space-y-0.5">
-                                <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/15 px-2.5 py-1 text-xs font-bold text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-500" />
-                                  <span>IN_PROGRESS</span>
-                                </span>
-                                <p className="text-[10px] text-blue-400 font-medium pl-1 animate-pulse">
-                                  Downloading & Flashing...
-                                </p>
-                              </div>
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                                <span>SUCCEEDED</span>
+                              </span>
                             ) : isFailed ? (
                               <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-bold text-red-600 dark:text-red-400 border border-red-500/20">
                                 <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
                                 <span>FAILED</span>
                               </span>
-                            ) : isAcked ? (
-                              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                                <span>ACK Received</span>
-                              </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-semibold text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                                <Clock className="h-3.5 w-3.5 animate-spin text-amber-500" />
-                                <span>Waiting for ACK</span>
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/15 px-2.5 py-1 text-xs font-bold text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                                <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-500" />
+                                <span>IN_PROGRESS</span>
                               </span>
                             )}
                           </td>
                           <td className="px-4 py-3 text-slate-400 text-[11px]">
                             <p>{formatRelativeTime(job.sentAt)}</p>
                             <p className="font-mono text-[10px]">{formatTimeSafe(job.sentAt, 'HH:mm:ss')}</p>
-                          </td>
-                          <td className="px-4 py-3">
-                            {job.ackPayload ? (
-                              <button
-                                onClick={() => setSelectedJobForModal(job)}
-                                className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-1 rounded-md border border-emerald-500/30 transition flex items-center gap-1"
-                              >
-                                <Check className="h-3 w-3" />
-                                <span>View Response</span>
-                              </button>
-                            ) : (
-                              <span className="text-slate-400 text-[11px]">Pending...</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="relative inline-flex items-center justify-end gap-1">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleSimulateAck(
-                                    job.jobId,
-                                    job.deviceId,
-                                    isInProgress ? 'SUCCEEDED' : 'IN_PROGRESS',
-                                    job.otaType
-                                  )
-                                }
-                                title={`Simulate ACK for ${job.jobId} (${
-                                  isInProgress ? 'Send SUCCEEDED' : 'Send IN_PROGRESS'
-                                })`}
-                                className="rounded-lg bg-slate-100 hover:bg-emerald-500 hover:text-white dark:bg-slate-800 dark:hover:bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition flex items-center gap-1 shadow-2xs cursor-pointer"
-                              >
-                                <Play className="h-3 w-3 text-emerald-500" />
-                                <span>Test ACK</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setActiveTestMenuJobId(activeTestMenuJobId === job.id ? null : job.id)
-                                }
-                                title="Select specific ACK status to test"
-                                className="rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 px-1.5 py-1 text-[11px] font-bold text-slate-500 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
-                              >
-                                <ChevronDown className="h-3 w-3" />
-                              </button>
-
-                              {activeTestMenuJobId === job.id && (
-                                <div className="absolute right-0 top-full mt-1 w-36 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl py-1 z-30 text-[11px]">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      handleSimulateAck(job.jobId, job.deviceId, 'IN_PROGRESS', job.otaType)
-                                      setActiveTestMenuJobId(null)
-                                    }}
-                                    className="w-full text-left px-3 py-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 flex items-center gap-1.5 font-semibold transition cursor-pointer"
-                                  >
-                                    <span className="h-2 w-2 rounded-full bg-blue-500" />
-                                    IN_PROGRESS
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      handleSimulateAck(job.jobId, job.deviceId, 'SUCCEEDED', job.otaType)
-                                      setActiveTestMenuJobId(null)
-                                    }}
-                                    className="w-full text-left px-3 py-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 flex items-center gap-1.5 font-semibold transition cursor-pointer"
-                                  >
-                                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                                    SUCCEEDED
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      handleSimulateAck(job.jobId, job.deviceId, 'FAILED', job.otaType)
-                                      setActiveTestMenuJobId(null)
-                                    }}
-                                    className="w-full text-left px-3 py-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-1.5 font-semibold transition cursor-pointer"
-                                  >
-                                    <span className="h-2 w-2 rounded-full bg-rose-500" />
-                                    FAILED
-                                  </button>
-                                </div>
-                              )}
-                            </div>
                           </td>
                         </tr>
                       )
@@ -1208,48 +1084,6 @@ export default function OtaUpdatesPage() {
                   <span className="font-mono font-bold">
                     {formatTimeSafe(selectedJobForModal.ackedAt, 'HH:mm:ss')} ({formatRelativeTime(selectedJobForModal.ackedAt)})
                   </span>
-                </div>
-              </div>
-
-              {/* Interactive Test Bar inside Modal */}
-              <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                  Test ACK for Job {selectedJobForModal.jobId} ({selectedJobForModal.otaType}):
-                </span>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await handleSimulateAck(selectedJobForModal.jobId, selectedJobForModal.deviceId, 'IN_PROGRESS', selectedJobForModal.otaType)
-                      const updated = (await otaService.getOtaJobs()).find((j) => j.id === selectedJobForModal.id)
-                      if (updated) setSelectedJobForModal(updated)
-                    }}
-                    className="px-2 py-1 rounded-md bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-[10px] font-bold transition cursor-pointer"
-                  >
-                    + IN_PROGRESS
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await handleSimulateAck(selectedJobForModal.jobId, selectedJobForModal.deviceId, 'SUCCEEDED', selectedJobForModal.otaType)
-                      const updated = (await otaService.getOtaJobs()).find((j) => j.id === selectedJobForModal.id)
-                      if (updated) setSelectedJobForModal(updated)
-                    }}
-                    className="px-2 py-1 rounded-md bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-bold transition cursor-pointer"
-                  >
-                    + SUCCEEDED
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await handleSimulateAck(selectedJobForModal.jobId, selectedJobForModal.deviceId, 'FAILED', selectedJobForModal.otaType)
-                      const updated = (await otaService.getOtaJobs()).find((j) => j.id === selectedJobForModal.id)
-                      if (updated) setSelectedJobForModal(updated)
-                    }}
-                    className="px-2 py-1 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-[10px] font-bold transition cursor-pointer"
-                  >
-                    + FAILED
-                  </button>
                 </div>
               </div>
 

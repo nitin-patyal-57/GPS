@@ -95,7 +95,7 @@ class GpsStore {
             .trim()
             .toUpperCase()
             .replace(/[\s-]+/g, '_');
-        let derivedStatus = 'acknowledged';
+        let derivedStatus = 'in_progress';
         if (rawStatus === 'SUCCEEDED' ||
             rawStatus === 'SUCCESS' ||
             rawStatus === 'DONE' ||
@@ -103,19 +103,13 @@ class GpsStore {
             rawStatus === 'OK') {
             derivedStatus = 'succeeded';
         }
-        else if (rawStatus === 'IN_PROGRESS' ||
-            rawStatus.includes('PROGRESS') ||
-            rawStatus.includes('DOWNLOADING') ||
-            rawStatus.includes('FLASHING') ||
-            rawStatus.includes('UPDATING') ||
-            rawStatus.includes('STARTED') ||
-            rawStatus.includes('RUNNING')) {
-            derivedStatus = 'in_progress';
-        }
         else if (rawStatus === 'FAILED' ||
             rawStatus.includes('FAIL') ||
             rawStatus.includes('ERROR')) {
             derivedStatus = 'failed';
+        }
+        else {
+            derivedStatus = 'in_progress';
         }
         // Extract incoming OTA type if specified in payload or topic
         const rawType = String(ackData?.ota_type || ackData?.type || ackData?.topic || '')

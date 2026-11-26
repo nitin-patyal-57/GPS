@@ -150,7 +150,7 @@ export class GpsStore {
       .toUpperCase()
       .replace(/[\s-]+/g, '_')
 
-    let derivedStatus: OtaJobRecord['status'] = 'acknowledged'
+    let derivedStatus: OtaJobRecord['status'] = 'in_progress'
     if (
       rawStatus === 'SUCCEEDED' ||
       rawStatus === 'SUCCESS' ||
@@ -160,21 +160,13 @@ export class GpsStore {
     ) {
       derivedStatus = 'succeeded'
     } else if (
-      rawStatus === 'IN_PROGRESS' ||
-      rawStatus.includes('PROGRESS') ||
-      rawStatus.includes('DOWNLOADING') ||
-      rawStatus.includes('FLASHING') ||
-      rawStatus.includes('UPDATING') ||
-      rawStatus.includes('STARTED') ||
-      rawStatus.includes('RUNNING')
-    ) {
-      derivedStatus = 'in_progress'
-    } else if (
       rawStatus === 'FAILED' ||
       rawStatus.includes('FAIL') ||
       rawStatus.includes('ERROR')
     ) {
       derivedStatus = 'failed'
+    } else {
+      derivedStatus = 'in_progress'
     }
 
     // Extract incoming OTA type if specified in payload or topic
