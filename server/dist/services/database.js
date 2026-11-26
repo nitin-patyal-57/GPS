@@ -211,6 +211,15 @@ class GpsStore {
     getOtaJobsByJobId(jobId) {
         return this.otaJobs.filter((j) => j.jobId === jobId);
     }
+    clearOtaJobs(type) {
+        if (type) {
+            this.otaJobs = this.otaJobs.filter((j) => j.otaType !== type);
+        }
+        else {
+            this.otaJobs = [];
+        }
+        this.saveToFile();
+    }
     pragma(_stmt) { }
     exec(_sql) { }
     prepare(sql) {

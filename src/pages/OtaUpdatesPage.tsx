@@ -29,6 +29,7 @@ import {
   CheckSquare,
   Square,
   Sparkles,
+  Trash2,
 } from 'lucide-react'
 import { formatRelativeTime, formatTimeSafe, parseDateSafe } from '@/utils/helpers'
 
@@ -375,6 +376,16 @@ export default function OtaUpdatesPage() {
     } finally {
       setIsDeploying(false)
     }
+  }
+
+  const handleClearHistory = async () => {
+    const filterText = historyTypeFilter === 'all' ? 'all OTA and DFOTA' : historyTypeFilter
+    if (!window.confirm(`Are you sure you want to delete ${filterText} acknowledgment history?`)) {
+      return
+    }
+    const filterType = historyTypeFilter === 'all' ? undefined : historyTypeFilter
+    await otaService.clearOtaJobs(filterType)
+    await loadJobs()
   }
 
   if (loading && devices.length === 0) {
@@ -940,6 +951,18 @@ export default function OtaUpdatesPage() {
                   <RefreshCw className="h-3.5 w-3.5" />
                   <span>Refresh</span>
                 </button>
+
+                {displayedJobs.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearHistory}
+                    title="Delete OTA and DFOTA acknowledgment history"
+                    className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50/60 hover:bg-rose-100 text-rose-600 dark:border-rose-900/40 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 dark:text-rose-400 px-3 py-1.5 text-xs font-semibold transition cursor-pointer"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Clear History</span>
+                  </button>
+                )}
               </div>
             </div>
 

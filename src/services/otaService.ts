@@ -115,13 +115,33 @@ export const otaService = {
       const res = await fetch(`${config.apiUrl}/api/ota/jobs?limit=${limit}&_t=${Date.now()}`)
       if (res.ok) {
         const jobs = await res.json()
-        if (Array.isArray(jobs) && jobs.length > 0) {
-          jobs.forEach((j) => saveCachedOtaJob(j))
+        if (Array.isArray(jobs)) {
+          if (jobs.length > 0) {
+            jobs.forEach((j) => saveCachedOtaJob(j))
+          } else {
+            localStorage.removeItem(LOCAL_STORAGE_OTA_JOBS_KEY)
+          }
           return jobs
         }
       }
     } catch {}
     return getCachedOtaJobs()
+  },
+
+  async clearOtaJobs(type?: OtaType): Promise<boolean> {
+    try {
+      if (type) {
+        const current = getCachedOtaJobs().filter((j) => j.otaType !== type)
+        localStorage.setItem(LOCAL_STORAGE_OTA_JOBS_KEY, JSON.stringify(current))
+      } else {
+        localStorage.removeItem(LOCAL_STORAGE_OTA_JOBS_KEY)
+      }
+      const url = type ? `${config.apiUrl}/api/ota/jobs?type=${type}` : `${config.apiUrl}/api/ota/jobs`
+      const res = await fetch(url, { method: 'DELETE' })
+      return res.ok
+    } catch {
+      return false
+    }
   },
 
   async simulateAck(jobId: string, deviceId: string, status = 'SUCCEEDED', otaType?: OtaType): Promise<any> {

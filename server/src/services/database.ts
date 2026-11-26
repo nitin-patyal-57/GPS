@@ -274,6 +274,15 @@ export class GpsStore {
     return this.otaJobs.filter((j) => j.jobId === jobId)
   }
 
+  clearOtaJobs(type?: 'APP_OTA' | 'DF_OTA') {
+    if (type) {
+      this.otaJobs = this.otaJobs.filter((j) => j.otaType !== type)
+    } else {
+      this.otaJobs = []
+    }
+    this.saveToFile()
+  }
+
   pragma(_stmt: string) {}
   exec(_sql: string) {}
 

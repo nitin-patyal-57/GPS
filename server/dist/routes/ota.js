@@ -166,6 +166,23 @@ router.get('/ota/jobs', (req, res) => {
     }
 });
 /**
+ * DELETE /api/ota/jobs
+ * Clears OTA / DFOTA job records and ACK history
+ */
+router.delete('/ota/jobs', (req, res) => {
+    try {
+        const db = (0, database_1.getDb)();
+        const type = req.query.type;
+        if (typeof db.clearOtaJobs === 'function') {
+            db.clearOtaJobs(type);
+        }
+        res.json({ success: true, message: 'OTA job history cleared' });
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message || 'Failed to clear OTA job history' });
+    }
+});
+/**
  * POST /api/ota/simulate-ack
  * Test endpoint to simulate device ACK for testing/demoing
  */
