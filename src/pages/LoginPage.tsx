@@ -13,8 +13,6 @@ import {
   AlertCircle,
   Sun,
   Moon,
-  Shield,
-  User,
 } from 'lucide-react'
 
 export default function LoginPage() {
@@ -36,12 +34,6 @@ export default function LoginPage() {
   if (isAuthenticated) {
     navigate(from, { replace: true })
     return null
-  }
-
-  const handleSelectRole = (roleEmail: string, rolePass: string) => {
-    setEmail(roleEmail)
-    setPassword(rolePass)
-    setError(null)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -101,58 +93,8 @@ export default function LoginPage() {
             Walnut Medical IoT Telemetry
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-            Sign in with authorized credentials to access real-time GNSS tracking
+            Sign in with your authorized credentials to access real-time GNSS tracking
           </p>
-        </div>
-
-        {/* Quick Account Fill Buttons */}
-        <div className="mb-6 rounded-2xl border border-slate-200/90 bg-slate-50/90 p-3 dark:border-slate-800 dark:bg-slate-950/60">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-400 mb-2 text-center">
-            Select Role Credentials
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => handleSelectRole('admin@walnutmedical.in', 'Walnut@2016')}
-              className={`flex flex-col items-start rounded-xl border p-2.5 text-left transition ${
-                email === 'admin@walnutmedical.in'
-                  ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500'
-                  : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
-              }`}
-            >
-              <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                <Shield className="h-3.5 w-3.5" />
-                <span>Admin</span>
-              </div>
-              <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400 mt-0.5 truncate w-full">
-                admin@walnutmedical.in
-              </span>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-sans">
-                Full Access + Settings
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleSelectRole('user@walnutmedical.in', 'WalnutMedical@2026')}
-              className={`flex flex-col items-start rounded-xl border p-2.5 text-left transition ${
-                email === 'user@walnutmedical.in'
-                  ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500'
-                  : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
-              }`}
-            >
-              <div className="flex items-center gap-1.5 text-xs font-bold text-teal-600 dark:text-teal-400">
-                <User className="h-3.5 w-3.5" />
-                <span>User</span>
-              </div>
-              <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400 mt-0.5 truncate w-full">
-                user@walnutmedical.in
-              </span>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-sans">
-                Tracking Only (No Settings)
-              </span>
-            </button>
-          </div>
         </div>
 
         {/* Error Notification */}
@@ -177,7 +119,7 @@ export default function LoginPage() {
                 autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="user@walnutmedical.in"
+                placeholder="name@walnutmedical.in"
                 className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-10 pr-4 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-800 dark:bg-slate-950/80 dark:text-white dark:placeholder:text-slate-500 dark:focus:bg-slate-950 transition"
               />
             </div>
