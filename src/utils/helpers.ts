@@ -84,3 +84,13 @@ export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lo
     Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
+
+/**
+ * Checks if a device is online on MQTT (received telemetry packet within the last 15 minutes)
+ */
+export function isDeviceMqttOnline(lastSeen: string | number | undefined | null): boolean {
+  const d = parseDateSafe(lastSeen)
+  if (!d) return false
+  const diffMinutes = (Date.now() - d.getTime()) / (1000 * 60)
+  return diffMinutes <= 15
+}

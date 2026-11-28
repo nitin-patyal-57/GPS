@@ -23,8 +23,9 @@ import {
   Sparkles,
   RefreshCw,
   Power,
+  WifiOff,
 } from 'lucide-react'
-import { formatTimeSafe, formatRelativeTime, formatUptime, getHeadingDirection, parseDateSafe } from '@/utils/helpers'
+import { formatTimeSafe, formatRelativeTime, formatUptime, getHeadingDirection, parseDateSafe, isDeviceMqttOnline } from '@/utils/helpers'
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -85,10 +86,23 @@ export default function GpsDetailPage() {
 
   const isMoving = (device.gps?.speedKmph || 0) > 1.5
 
-  const isMqttConnected = device.status === 'online'
+  const isMqttConnected = isDeviceMqttOnline(device.lastSeen)
 
   return (
     <div className="space-y-6">
+      {/* Offline Status Alert Banner */}
+      {!isMqttConnected && (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-800 dark:text-amber-200 animate-in fade-in duration-200">
+          <WifiOff className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-bold text-amber-900 dark:text-amber-100 text-sm">Device is Offline (No Live Connection)</p>
+            <p className="mt-1 text-slate-600 dark:text-slate-300 leading-relaxed">
+              This GPS tracker is not transmitting live MQTT data (no packet received in over 15 minutes). The data shown below reflects the last recorded telemetry from <span className="font-mono font-semibold">{formatTimeSafe(device.lastSeen)}</span> ({formatRelativeTime(device.lastSeen)}). Real-time commands may be queued until the device reconnects.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">

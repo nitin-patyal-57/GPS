@@ -20,7 +20,8 @@ import {
   Cpu,
   Clock,
 } from 'lucide-react'
-import { getHeadingDirection, formatTimeSafe, formatRelativeTime } from '@/utils/helpers'
+import { getHeadingDirection, formatTimeSafe, formatRelativeTime, isDeviceMqttOnline } from '@/utils/helpers'
+import OfflineDeviceModal from '@/components/devices/OfflineDeviceModal'
 
 type FilterType = 'all' | 'moving' | 'stationary' | 'online' | 'lowBattery'
 
@@ -33,7 +34,17 @@ export default function GpsTrackersPage() {
   const [view, setView] = useState<'grid' | 'list'>('grid')
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [offlineModalDevice, setOfflineModalDevice] = useState<GpsDevice | null>(null)
   const [, setTick] = useState(0)
+
+  const handleDeviceClick = (device: GpsDevice) => {
+    const isOnline = isDeviceMqttOnline(device.lastSeen)
+    if (!isOnline) {
+      setOfflineModalDevice(device)
+    } else {
+      navigate(`/devices/${device.deviceId}`)
+    }
+  }
 
   // Auto-tick every 5 seconds to keep relative time fresh ("Just now", "5s ago", etc.)
   useEffect(() => {
@@ -57,7 +68,7 @@ export default function GpsTrackersPage() {
       switch (filter) {
         case 'moving': return isMoving
         case 'stationary': return !isMoving
-        case 'online': return d.status === 'online'
+        case 'online': return isDeviceMqttOnline(d.lastSeen)
         case 'lowBattery': return d.power?.isLowBattery || d.power?.batteryPercentage < 20
         default: return true
       }
@@ -195,7 +206,7 @@ export default function GpsTrackersPage() {
                 key={d.deviceId}
                 hover
                 padding="md"
-                onClick={() => navigate(`/devices/${d.deviceId}`)}
+                onClick={() => handleDeviceClick(d)}
                 className="flex flex-col justify-between relative group cursor-pointer"
               >
                 <div>
@@ -311,7 +322,7 @@ export default function GpsTrackersPage() {
                 {filtered.map((d) => (
                   <tr
                     key={d.deviceId}
-                    onClick={() => navigate(`/devices/${d.deviceId}`)}
+                    onClick={() => handleDeviceClick(d)}
                     className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 cursor-pointer transition"
                   >
                     <td className="px-4 py-3">
@@ -380,6 +391,18 @@ export default function GpsTrackersPage() {
           navigate(`/devices/${dev.deviceId}`)
         }}
         addDeviceFn={addDevice}
+      />
+
+      {/* Offline Device Modal Notification */}
+      <OfflineDeviceModal
+        device={offlineModalDevice}
+        isOpen={Boolean(offlineModalDevice)}
+        onClose={() => setOfflineModalDevice(null)}
+        onProceed={() => {
+          if (offlineModalDevice) {
+            navigate(`/devices/${offlineModalDevice.deviceId}`)
+          }
+        }}
       />
     </div>
   )

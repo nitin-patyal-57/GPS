@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react'
 export interface AuthUser {
   email: string
   name: string
-  role: string
+  role: 'admin' | 'user'
 }
 
 interface AuthContextType {
@@ -21,6 +21,12 @@ const ADMIN_CREDENTIALS = {
   password: 'Walnut@2016',
 }
 
+const USER_CREDENTIALS = {
+  email: 'user@walnutmedical.in',
+  username: 'user',
+  password: 'WalnutMedical@2026',
+}
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -28,7 +34,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const stored = localStorage.getItem(AUTH_STORAGE_KEY)
       if (stored) {
-        return JSON.parse(stored)
+        const parsed = JSON.parse(stored)
+        // Normalize role
+        if (parsed.email === ADMIN_CREDENTIALS.email || parsed.role === 'Fleet Admin') {
+          parsed.role = 'admin'
+        } else if (parsed.email === USER_CREDENTIALS.email) {
+          parsed.role = 'user'
+        }
+        return parsed
       }
     } catch {}
     return null
@@ -40,15 +53,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const cleanEmail = emailInput.trim().toLowerCase()
     const cleanPass = passwordInput.trim()
 
-    // Accept either 'admin' or 'admin@walnutmedical.in'
-    const isEmailValid = cleanEmail === ADMIN_CREDENTIALS.email || cleanEmail === ADMIN_CREDENTIALS.username
-    const isPassValid = cleanPass === ADMIN_CREDENTIALS.password
+    // 1. Check Administrator credentials
+    const isAdminEmail = cleanEmail === ADMIN_CREDENTIALS.email || cleanEmail === ADMIN_CREDENTIALS.username
+    const isAdminPass = cleanPass === ADMIN_CREDENTIALS.password
 
-    if (isEmailValid && isPassValid) {
+    if (isAdminEmail && isAdminPass) {
       const authUser: AuthUser = {
         email: ADMIN_CREDENTIALS.email,
         name: 'Administrator',
-        role: 'Fleet Admin',
+        role: 'admin',
+      }
+      setUser(authUser)
+      try {
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser))
+      } catch {}
+      return { success: true }
+    }
+
+    // 2. Check Standard User credentials (restricted access - no settings)
+    const isUserEmail = cleanEmail === USER_CREDENTIALS.email || cleanEmail === USER_CREDENTIALS.username
+    const isUserPass = cleanPass === USER_CREDENTIALS.password
+
+    if (isUserEmail && isUserPass) {
+      const authUser: AuthUser = {
+        email: USER_CREDENTIALS.email,
+        name: 'Standard User',
+        role: 'user',
       }
       setUser(authUser)
       try {
@@ -59,7 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return {
       success: false,
-      error: 'Invalid email or password. Please check your credentials.',
+      error: 'Invalid email or password. Please verify your credentials.',
     }
   }
 

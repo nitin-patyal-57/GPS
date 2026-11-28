@@ -44,7 +44,11 @@ export default function App() {
                       <Route path="/battery" element={<BatteryPowerPage />} />
                       <Route path="/ota" element={<OtaUpdatesPage />} />
                       <Route path="/alerts" element={<AlertsPage />} />
-                      <Route path="/settings" element={<SettingsPage />} />
+
+                      {/* Admin-only Routes */}
+                      <Route element={<ProtectedRoute requiredRole="admin" />}>
+                        <Route path="/settings" element={<SettingsPage />} />
+                      </Route>
                     </Route>
                   </Route>
 

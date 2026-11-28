@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGpsDevices, useGpsAlerts } from '@/hooks/useGpsDevices'
 import Card from '@/components/ui/Card'
@@ -7,6 +7,8 @@ import BatteryIndicator from '@/components/ui/BatteryIndicator'
 import SignalIndicator from '@/components/ui/SignalIndicator'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import ErrorState from '@/components/ui/ErrorState'
+import OfflineDeviceModal from '@/components/devices/OfflineDeviceModal'
+import type { GpsDevice } from '@/types/gps'
 import {
   Navigation,
   Satellite,
@@ -19,16 +21,26 @@ import {
   Compass,
 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-import { formatTimeSafe, formatRelativeTime, getHeadingDirection } from '@/utils/helpers'
+import { formatTimeSafe, formatRelativeTime, getHeadingDirection, isDeviceMqttOnline } from '@/utils/helpers'
 
 export default function OverviewPage() {
   const { devices, loading, error, refetch } = useGpsDevices()
   const { alerts } = useGpsAlerts()
   const navigate = useNavigate()
+  const [offlineModalDevice, setOfflineModalDevice] = useState<GpsDevice | null>(null)
+
+  const handleDeviceClick = (device: GpsDevice) => {
+    const isOnline = isDeviceMqttOnline(device.lastSeen)
+    if (!isOnline) {
+      setOfflineModalDevice(device)
+    } else {
+      navigate(`/devices/${device.deviceId}`)
+    }
+  }
 
   const stats = useMemo(() => {
     const total = devices.length
-    const online = devices.filter((d) => d.status === 'online').length
+    const online = devices.filter((d) => isDeviceMqttOnline(d.lastSeen)).length
     const moving = devices.filter((d) => (d.gps?.speedKmph || 0) > 1.5 || d.motionState === 'moving').length
     const stationary = total - moving
     const lowBat = devices.filter((d) => d.power?.isLowBattery || d.power?.batteryPercentage < 20).length
@@ -161,7 +173,7 @@ export default function OverviewPage() {
               return (
                 <div
                   key={device.deviceId}
-                  onClick={() => navigate(`/devices/${device.deviceId}`)}
+                  onClick={() => handleDeviceClick(device)}
                   className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer border border-slate-200/60 dark:border-slate-700/60"
                 >
                   <div className="flex items-center gap-3">
@@ -216,7 +228,7 @@ export default function OverviewPage() {
             return (
               <div
                 key={device.deviceId}
-                onClick={() => navigate(`/devices/${device.deviceId}`)}
+                onClick={() => handleDeviceClick(device)}
                 className="rounded-xl border border-slate-200 bg-white p-4 transition-all hover:shadow-md cursor-pointer dark:border-slate-700/80 dark:bg-slate-800/80 flex flex-col justify-between"
               >
                 <div>
@@ -281,6 +293,18 @@ export default function OverviewPage() {
           })}
         </div>
       </Card>
+
+      {/* Offline Device Modal Notification */}
+      <OfflineDeviceModal
+        device={offlineModalDevice}
+        isOpen={Boolean(offlineModalDevice)}
+        onClose={() => setOfflineModalDevice(null)}
+        onProceed={() => {
+          if (offlineModalDevice) {
+            navigate(`/devices/${offlineModalDevice.deviceId}`)
+          }
+        }}
+      />
     </div>
   )
 }

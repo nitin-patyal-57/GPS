@@ -13,6 +13,8 @@ import {
   AlertCircle,
   Sun,
   Moon,
+  Shield,
+  User,
 } from 'lucide-react'
 
 export default function LoginPage() {
@@ -36,6 +38,12 @@ export default function LoginPage() {
     return null
   }
 
+  const handleSelectRole = (roleEmail: string, rolePass: string) => {
+    setEmail(roleEmail)
+    setPassword(rolePass)
+    setError(null)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -48,7 +56,7 @@ export default function LoginPage() {
     setIsLoading(true)
 
     // Simulate quick auth delay for realistic polished UX
-    await new Promise((r) => setTimeout(r, 400))
+    await new Promise((r) => setTimeout(r, 350))
 
     const result = await login(email, password)
     setIsLoading(false)
@@ -61,9 +69,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-screen w-full flex items-center justify-center p-4 bg-slate-950 overflow-hidden selection:bg-emerald-500 selection:text-white">
+    <div className="relative min-h-screen w-full flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden selection:bg-emerald-500 selection:text-white transition-colors duration-200">
       {/* Background Ambient Glow & Grid Pattern */}
-      <div className="absolute inset-0 bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:24px_24px] opacity-15" />
+      <div className="absolute inset-0 bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:24px_24px] opacity-20 dark:opacity-15 pointer-events-none" />
       <div className="absolute -top-40 -left-40 h-96 w-96 rounded-full bg-emerald-500/15 blur-3xl pointer-events-none" />
       <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-teal-500/15 blur-3xl pointer-events-none" />
 
@@ -72,35 +80,85 @@ export default function LoginPage() {
         <button
           onClick={toggleTheme}
           title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          className="rounded-xl border border-slate-800 bg-slate-900/80 p-2.5 text-slate-400 hover:text-white hover:bg-slate-800 transition backdrop-blur-md"
+          className="rounded-xl border border-slate-200 bg-white/90 p-2.5 text-slate-600 shadow-sm hover:text-slate-900 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 transition backdrop-blur-md"
         >
-          {isDark ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4 text-indigo-400" />}
+          {isDark ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4 text-indigo-600" />}
         </button>
       </div>
 
       {/* Main Login Card */}
-      <div className="relative z-10 w-full max-w-md rounded-3xl border border-slate-800/80 bg-slate-900/90 p-8 shadow-2xl backdrop-blur-xl sm:p-10">
+      <div className="relative z-10 w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-8 shadow-2xl backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/95 sm:p-10 transition-colors duration-200">
         {/* Brand Header */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-xl shadow-emerald-500/30 mb-4 ring-4 ring-emerald-500/10">
             <Compass className="h-8 w-8 text-white animate-spin-slow" />
           </div>
 
-          <h1 className="text-2xl font-black text-white tracking-tight">
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
             GPS Fleet Portal
           </h1>
-          <p className="text-xs text-emerald-400 font-mono font-medium mt-1">
+          <p className="text-xs text-emerald-600 dark:text-emerald-400 font-mono font-medium mt-1">
             Walnut Medical IoT Telemetry
           </p>
-          <p className="text-xs text-slate-400 mt-2">
-            Sign in with authorized administrator credentials to access real-time GNSS tracking
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+            Sign in with authorized credentials to access real-time GNSS tracking
           </p>
+        </div>
+
+        {/* Quick Account Fill Buttons */}
+        <div className="mb-6 rounded-2xl border border-slate-200/90 bg-slate-50/90 p-3 dark:border-slate-800 dark:bg-slate-950/60">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-400 mb-2 text-center">
+            Select Role Credentials
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => handleSelectRole('admin@walnutmedical.in', 'Walnut@2016')}
+              className={`flex flex-col items-start rounded-xl border p-2.5 text-left transition ${
+                email === 'admin@walnutmedical.in'
+                  ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500'
+                  : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
+              }`}
+            >
+              <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                <Shield className="h-3.5 w-3.5" />
+                <span>Admin</span>
+              </div>
+              <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400 mt-0.5 truncate w-full">
+                admin@walnutmedical.in
+              </span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-sans">
+                Full Access + Settings
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSelectRole('user@walnutmedical.in', 'WalnutMedical@2026')}
+              className={`flex flex-col items-start rounded-xl border p-2.5 text-left transition ${
+                email === 'user@walnutmedical.in'
+                  ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500'
+                  : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
+              }`}
+            >
+              <div className="flex items-center gap-1.5 text-xs font-bold text-teal-600 dark:text-teal-400">
+                <User className="h-3.5 w-3.5" />
+                <span>User</span>
+              </div>
+              <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400 mt-0.5 truncate w-full">
+                user@walnutmedical.in
+              </span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-sans">
+                Tracking Only (No Settings)
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Error Notification */}
         {error && (
-          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3.5 text-xs text-rose-300 animate-in fade-in slide-in-from-top-2 duration-200">
-            <AlertCircle className="h-4 w-4 text-rose-400 flex-shrink-0 mt-0.5" />
+          <div className="mb-5 flex items-start gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3.5 text-xs text-rose-600 dark:text-rose-300 animate-in fade-in slide-in-from-top-2 duration-200">
+            <AlertCircle className="h-4 w-4 text-rose-500 flex-shrink-0 mt-0.5" />
             <div className="flex-1 font-medium leading-relaxed">{error}</div>
           </div>
         )}
@@ -109,18 +167,18 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Email / Username Field */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
-              Admin Email / Username
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+              Email / Username
             </label>
             <div className="relative">
-              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-500" />
               <input
                 type="text"
                 autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@walnutmedical.in"
-                className="w-full rounded-xl border border-slate-800 bg-slate-950/80 py-2.5 pl-10 pr-4 text-xs font-medium text-white placeholder-slate-500 focus:border-emerald-500 focus:bg-slate-950 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition"
+                placeholder="user@walnutmedical.in"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-10 pr-4 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-800 dark:bg-slate-950/80 dark:text-white dark:placeholder:text-slate-500 dark:focus:bg-slate-950 transition"
               />
             </div>
           </div>
@@ -128,25 +186,25 @@ export default function LoginPage() {
           {/* Password Field */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                 Password
               </label>
             </div>
             <div className="relative">
-              <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+              <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-500" />
               <input
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••••••"
-                className="w-full rounded-xl border border-slate-800 bg-slate-950/80 py-2.5 pl-10 pr-10 text-xs font-medium text-white placeholder-slate-500 focus:border-emerald-500 focus:bg-slate-950 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-10 pr-10 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-800 dark:bg-slate-950/80 dark:text-white dark:placeholder:text-slate-500 dark:focus:bg-slate-950 transition"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 tabIndex={-1}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 transition"
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
@@ -174,7 +232,7 @@ export default function LoginPage() {
         </form>
 
         {/* Security / Info Footer */}
-        <div className="mt-8 pt-6 border-t border-slate-800/80 flex items-center justify-center gap-2 text-[11px] text-slate-500">
+        <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800/80 flex items-center justify-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
           <ShieldCheck className="h-4 w-4 text-emerald-500" />
           <span>Protected by 256-bit TLS & AWS IoT Core Session</span>
         </div>

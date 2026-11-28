@@ -1,10 +1,17 @@
 import { useState } from 'react'
+import { Navigate } from 'react-router-dom'
+import { useAuth } from '@/context/AuthContext'
 import { useGpsDevices } from '@/hooks/useGpsDevices'
 import { realtimeGpsService } from '@/services/websocket'
 import Card from '@/components/ui/Card'
 import { Radio, Wifi, Database, CheckCircle2, Server, Copy, Check } from 'lucide-react'
 
 export default function SettingsPage() {
+  const { user } = useAuth()
+  if (user?.role !== 'admin') {
+    return <Navigate to="/" replace />
+  }
+
   const { devices } = useGpsDevices()
   const wsStatus = realtimeGpsService.getStatus()
   const [copied, setCopied] = useState(false)
